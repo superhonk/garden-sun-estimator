@@ -1,0 +1,10 @@
+{
+  "name": "Garden Sun Exposure Estimator",
+  "short_name": "Sun Exposure",
+  "description": "Estimate potential direct sunlight for a garden spot, month by month.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f0e6",
+  "theme_color": "#f4f0e6"
+}

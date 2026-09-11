@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Estimate potential direct sunlight for a garden spot, month by month."
+    />
+    <meta name="theme-color" content="#f4f0e6" />
+    <title>Garden Sun Exposure Estimator</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Garden Sun Exposure Estimator home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Sun exposure</span>
+      </a>
+      <span class="prototype-label">Early prototype</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">Plant with better information</p>
+        <h1 id="hero-title">How much sun does this garden spot get?</h1>
+        <p class="hero-copy">
+          Use your phone to map nearby shade and estimate potential direct sunlight for every
+          month of the growing season.
+        </p>
+
+        <div class="action-card">
+          <div>
+            <p class="action-title">Start with a quick phone check</p>
+            <p class="action-copy">
+              See whether this browser exposes the camera, location, and orientation features
+              needed for a future measurement.
+            </p>
+          </div>
+          <button id="check-device" class="primary-button" type="button">Check this phone</button>
+          <p id="check-summary" class="check-summary" role="status" aria-live="polite"></p>
+          <ul id="capability-list" class="capability-list" aria-label="Phone capability results"></ul>
+        </div>
+
+        <p class="privacy-note">
+          No account. No photo upload. Measurements will be processed on this device.
+        </p>
+      </section>
+
+      <section class="how-it-works" aria-labelledby="how-title">
+        <p class="eyebrow">Planned measurement</p>
+        <h2 id="how-title">From a camera sweep to monthly sunlight</h2>
+        <ol class="steps">
+          <li>
+            <span class="step-number">1</span>
+            <div>
+              <h3>Stand at the planting spot</h3>
+              <p>Capture from roughly the height of the plant you have in mind.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">2</span>
+            <div>
+              <h3>Follow a guided sky sweep</h3>
+              <p>The app will map open sky and shade from trees, fences, and buildings.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">3</span>
+            <div>
+              <h3>Review each month</h3>
+              <p>Compare direct-sun hours during the months when your plants are growing.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="status-panel" aria-labelledby="status-title">
+        <p class="eyebrow">Current status</p>
+        <h2 id="status-title">The foundation is ready</h2>
+        <p>
+          This version establishes the installable, phone-first website and verifies browser
+          capabilities. Guided capture, sky detection, solar paths, and monthly results are the
+          next implementation stages.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>Potential direct sunlight under clear-sky conditions. Gardening guidance, not a guarantee.</p>
+    </footer>
+  </body>
+</html>
