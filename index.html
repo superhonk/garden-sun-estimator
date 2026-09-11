@@ -3,15 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="Estimate potential direct sunlight for a garden spot, month by month."
-    />
+    <meta name="description" content="Estimate potential direct sunlight for a garden spot during the growing season." />
     <meta name="theme-color" content="#f4f0e6" />
     <title>Garden Sun Exposure Estimator</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
-    <script src="./app.js" defer></script>
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -19,7 +16,7 @@
         <span class="brand-mark" aria-hidden="true"></span>
         <span>Sun exposure</span>
       </a>
-      <span class="prototype-label">Early prototype</span>
+      <span class="prototype-label">Feasibility prototype</span>
     </header>
 
     <main>
@@ -27,69 +24,135 @@
         <p class="eyebrow">Plant with better information</p>
         <h1 id="hero-title">How much sun does this garden spot get?</h1>
         <p class="hero-copy">
-          Use your phone to map nearby shade and estimate potential direct sunlight for every
-          month of the growing season.
+          Use your phone to map nearby shade and estimate potential direct sunlight during the
+          months when your plants are growing.
         </p>
 
         <div class="action-card">
           <div>
             <p class="action-title">Start with a quick phone check</p>
             <p class="action-copy">
-              See whether this browser exposes the camera, location, and orientation features
-              needed for a future measurement.
+              Check whether this browser exposes the camera, location, orientation, and local
+              storage needed for a measurement.
             </p>
           </div>
           <button id="check-device" class="primary-button" type="button">Check this phone</button>
           <p id="check-summary" class="check-summary" role="status" aria-live="polite"></p>
           <ul id="capability-list" class="capability-list" aria-label="Phone capability results"></ul>
+          <button id="open-capture" class="secondary-button" type="button" hidden>Open capture test</button>
         </div>
 
-        <p class="privacy-note">
-          No account. No photo upload. Measurements will be processed on this device.
-        </p>
+        <p class="privacy-note">No account. No photo upload. Camera analysis stays on this device.</p>
+      </section>
+
+      <section id="capture-lab" class="capture-lab" aria-labelledby="capture-title" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Mobile feasibility test</p>
+            <h2 id="capture-title">Map the visible sky</h2>
+          </div>
+          <button id="close-capture" class="text-button" type="button">Close camera</button>
+        </div>
+
+        <div class="prototype-warning">
+          <strong>This is a diagnostic prototype.</strong>
+          Direction and elevation are approximate. Hold the phone upright in portrait mode and
+          rotate from one fixed spot—do not walk around.
+        </div>
+
+        <div class="camera-stage">
+          <video id="camera-preview" playsinline muted aria-label="Live rear camera preview"></video>
+          <canvas id="segmentation-overlay" aria-label="Detected sky and obstruction overlay"></canvas>
+          <div class="camera-guide" aria-hidden="true"><span></span></div>
+          <p id="camera-message" class="camera-message">Starting camera…</p>
+        </div>
+
+        <dl class="sensor-grid" aria-label="Live sensor readings">
+          <div><dt>Heading</dt><dd id="heading-reading">Waiting</dd></div>
+          <div><dt>Elevation</dt><dd id="elevation-reading">Waiting</dd></div>
+          <div><dt>Roll</dt><dd id="roll-reading">Waiting</dd></div>
+          <div><dt>Location</dt><dd id="location-reading">Waiting</dd></div>
+        </dl>
+
+        <div class="capture-layout">
+          <section class="capture-controls" aria-labelledby="sweep-title">
+            <p class="eyebrow">Guided sweep</p>
+            <h3 id="sweep-title">Rotate slowly through two passes</h3>
+            <p id="sweep-guidance" class="muted-copy">
+              First keep the camera near the horizon. Then repeat while pointing upward to include
+              taller trees and overhead branches.
+            </p>
+
+            <div class="progress-track" aria-hidden="true"><span id="coverage-bar"></span></div>
+            <p id="coverage-reading" class="capture-stat">0 samples · 0% directional coverage</p>
+            <p id="model-status" class="model-status" role="status" aria-live="polite">
+              Preparing on-device sky detection…
+            </p>
+
+            <div class="button-row">
+              <button id="capture-frame" class="primary-button" type="button" disabled>Add sample</button>
+              <button id="toggle-auto" class="secondary-button" type="button" disabled>Auto-sampling on</button>
+            </div>
+
+            <details class="advanced-settings">
+              <summary>Camera geometry assumption</summary>
+              <label for="fov-control">
+                Estimated horizontal field of view
+                <output id="fov-reading" for="fov-control">65°</output>
+              </label>
+              <input id="fov-control" type="range" min="45" max="90" value="65" step="1" />
+              <p>
+                Browsers do not reliably expose camera focal length. This setting lets us test how
+                sensitive the obstruction map is to that missing information.
+              </p>
+            </details>
+          </section>
+
+          <section class="map-panel" aria-labelledby="map-title">
+            <div class="map-heading">
+              <div>
+                <p class="eyebrow">Angular obstruction map</p>
+                <h3 id="map-title">Coverage from 0–360°</h3>
+              </div>
+              <button id="export-diagnostics" class="text-button" type="button" disabled>Export data</button>
+            </div>
+            <canvas id="obstruction-map" width="720" height="180" aria-label="Approximate obstruction map by heading and elevation"></canvas>
+            <div class="map-axis" aria-hidden="true">
+              <span>N · 0°</span><span>E · 90°</span><span>S · 180°</span><span>W · 270°</span><span>N</span>
+            </div>
+            <ul class="map-legend" aria-label="Map colors">
+              <li><span class="legend-swatch sky"></span>Sky</li>
+              <li><span class="legend-swatch tree"></span>Tree canopy</li>
+              <li><span class="legend-swatch obstruction"></span>Other obstruction</li>
+              <li><span class="legend-swatch unknown"></span>Not captured</li>
+            </ul>
+          </section>
+        </div>
+
+        <canvas id="sample-canvas" class="processing-canvas" aria-hidden="true"></canvas>
       </section>
 
       <section class="how-it-works" aria-labelledby="how-title">
         <p class="eyebrow">Planned measurement</p>
         <h2 id="how-title">From a camera sweep to monthly sunlight</h2>
         <ol class="steps">
-          <li>
-            <span class="step-number">1</span>
-            <div>
-              <h3>Stand at the planting spot</h3>
-              <p>Capture from roughly the height of the plant you have in mind.</p>
-            </div>
-          </li>
-          <li>
-            <span class="step-number">2</span>
-            <div>
-              <h3>Follow a guided sky sweep</h3>
-              <p>The app will map open sky and shade from trees, fences, and buildings.</p>
-            </div>
-          </li>
-          <li>
-            <span class="step-number">3</span>
-            <div>
-              <h3>Review each month</h3>
-              <p>Compare direct-sun hours during the months when your plants are growing.</p>
-            </div>
-          </li>
+          <li><span class="step-number">1</span><div><h3>Stand at the planting spot</h3><p>Capture from roughly the height of the plant you have in mind.</p></div></li>
+          <li><span class="step-number">2</span><div><h3>Follow a guided sky sweep</h3><p>The app maps open sky and conservative shade from trees and structures.</p></div></li>
+          <li><span class="step-number">3</span><div><h3>Review growing months</h3><p>Compare direct-sun hours during the local foliage and growing season.</p></div></li>
         </ol>
       </section>
 
       <section class="status-panel" aria-labelledby="status-title">
         <p class="eyebrow">Current status</p>
-        <h2 id="status-title">The foundation is ready</h2>
+        <h2 id="status-title">Capture testing is ready</h2>
         <p>
-          This version establishes the installable, phone-first website and verifies browser
-          capabilities. Guided capture, sky detection, solar paths, and monthly results are the
-          next implementation stages.
+          This version tests camera access, phone orientation, on-device semantic segmentation,
+          conservative tree-canopy masks, and an approximate angular map. It does not yet calculate
+          monthly sunlight.
         </p>
       </section>
     </main>
 
-    <footer>
-      <p>Potential direct sunlight under clear-sky conditions. Gardening guidance, not a guarantee.</p>
-    </footer>
+    <footer><p>Potential direct sunlight under clear-sky conditions. Gardening guidance, not a guarantee.</p></footer>
   </body>
 </html>
