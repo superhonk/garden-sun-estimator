@@ -62,10 +62,25 @@
 
         <div class="camera-stage">
           <video id="camera-preview" playsinline muted aria-label="Live rear camera preview"></video>
-          <canvas id="segmentation-overlay" aria-label="Detected sky and obstruction overlay"></canvas>
           <div class="camera-guide" aria-hidden="true"><span></span></div>
+          <p id="capture-cue" class="capture-cue" role="status" aria-live="polite">Point, then hold still</p>
           <p id="camera-message" class="camera-message">Starting camera…</p>
         </div>
+
+        <section id="sample-review" class="sample-review" aria-labelledby="sample-review-title" hidden>
+          <div class="sample-review-heading">
+            <div>
+              <p class="eyebrow">Frozen captured frame</p>
+              <h3 id="sample-review-title">Checking this view</h3>
+            </div>
+            <p id="sample-review-meta" class="sample-review-meta">Waiting for result</p>
+          </div>
+          <div id="sample-review-stage" class="sample-review-stage">
+            <canvas id="captured-frame" aria-label="Captured camera frame"></canvas>
+            <canvas id="segmentation-overlay" aria-label="Detected sky and obstruction mask"></canvas>
+          </div>
+          <p class="sample-review-note">This mask belongs to the frozen frame above, even if you move the live camera afterward.</p>
+        </section>
 
         <dl class="sensor-grid" aria-label="Live sensor readings">
           <div><dt>Heading</dt><dd id="heading-reading">Waiting</dd></div>
@@ -85,14 +100,31 @@
 
             <div class="progress-track" aria-hidden="true"><span id="coverage-bar"></span></div>
             <p id="coverage-reading" class="capture-stat">0 samples · 0% directional coverage</p>
+            <div class="coverage-bands" aria-label="Captured and missing directions">
+              <div class="coverage-band-row">
+                <span>Horizon</span>
+                <div id="horizon-coverage" class="coverage-band" role="img" aria-label="No horizon directions captured"></div>
+              </div>
+              <div class="coverage-band-row">
+                <span>Upper</span>
+                <div id="upper-coverage" class="coverage-band" role="img" aria-label="No upper directions captured"></div>
+              </div>
+              <div class="coverage-cardinals" aria-hidden="true"><span>N</span><span>E</span><span>S</span><span>W</span><span>N</span></div>
+            </div>
             <p id="model-status" class="model-status" role="status" aria-live="polite">
               Preparing on-device sky detection…
             </p>
+            <p id="performance-reading" class="performance-reading">Timing appears after the first accepted sample.</p>
 
             <div class="button-row">
-              <button id="capture-frame" class="primary-button" type="button" disabled>Add sample</button>
+              <button id="capture-frame" class="primary-button" type="button" disabled>Capture this view</button>
               <button id="toggle-auto" class="secondary-button" type="button" disabled>Auto-sampling on</button>
             </div>
+
+            <details id="captured-samples" class="captured-samples">
+              <summary>Captured samples <span id="sample-count">0</span></summary>
+              <ol id="sample-list"><li class="empty-samples">No samples accepted yet.</li></ol>
+            </details>
 
             <details class="advanced-settings">
               <summary>Camera geometry assumption</summary>
@@ -144,11 +176,10 @@
 
       <section class="status-panel" aria-labelledby="status-title">
         <p class="eyebrow">Current status</p>
-        <h2 id="status-title">Capture testing is ready</h2>
+        <h2 id="status-title">Synchronized capture is ready to test</h2>
         <p>
-          This version tests camera access, phone orientation, on-device semantic segmentation,
-          conservative tree-canopy masks, and an approximate angular map. It does not yet calculate
-          monthly sunlight.
+          This version locks each camera frame to its direction before analysis, measures processing
+          time, and keeps every mask aligned with a frozen frame. It does not yet calculate monthly sunlight.
         </p>
       </section>
     </main>

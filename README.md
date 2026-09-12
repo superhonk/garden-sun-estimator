@@ -6,7 +6,7 @@ This document is the living project description and source of truth for the prod
 
 The project is currently in the definition and prototyping stage.
 
-The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, an approximate azimuth/elevation obstruction map, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. It does not yet calculate monthly sunlight.
+The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, synchronized frame-and-orientation sampling, measured inference timing, guided hold-still capture, a frozen mask review, two-band directional coverage, sample removal and retaking, an approximate azimuth/elevation obstruction map, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. An initial iPhone 12 field test confirmed that camera access and segmentation work and that the masks appear accurate, but it also exposed visible inference latency during movement. The synchronization changes now require another field test. The prototype does not yet calculate monthly sunlight.
 
 ## Summary
 
@@ -192,6 +192,25 @@ A later version may allow the user to select a plant or its active growing month
 - Download the pinned TensorFlow.js library and model weights when the prototype is first used. Camera frames are not uploaded. Self-hosting approved model assets remains a production decision.
 
 This approach is provisional. Mobile field tests must determine whether browser orientation readings and assumed camera geometry are stable enough. If not, frame-to-frame feature matching or an explicit camera calibration step will be required.
+
+### Initial mobile finding and synchronized-capture milestone
+
+An initial test on an iPhone 12 found that the camera works and the segmentation masks are visually accurate when shown. The masks appear only intermittently and can lag behind the live camera view while the user continues moving. In the current prototype, the frame is copied before segmentation but its orientation is read after segmentation finishes. This can associate a good mask with a later, incorrect phone direction and is therefore a capture-correctness issue, not merely a visual delay.
+
+The synchronized guided-capture loop has now been implemented. It:
+
+- snapshots the image, heading, elevation, roll, and timestamp together before inference starts;
+- measures and records inference duration and effective accepted-sample rate on the device;
+- displays the completed mask against its frozen source frame, rather than over a newer live-camera frame;
+- detects a short stable hold before accepting manual or automatic capture;
+- confirms the captured direction and processing time when a sample is accepted;
+- prevents motion during inference from changing the direction assigned to the captured sample;
+- shows captured and missing 15-degree bins separately for the horizon and upper passes; and
+- lets the user remove any individual sample and return to that direction to retake it.
+
+The milestone is complete in code but must be field-tested again on the iPhone 12 and at least one Android phone. The test should confirm that a frame is captured only after a steady hold, the mask remains aligned with the frozen frame, the recorded heading does not change while inference runs, samples can be removed and retaken, and repeated sweeps at the same spot produce similar obstruction maps.
+
+Solar-path and monthly-duration calculation should follow successful capture validation. It depends on a directionally trustworthy obstruction map, whereas adding it first could produce precise-looking results from misaligned capture data.
 
 ## Non-functional requirements
 

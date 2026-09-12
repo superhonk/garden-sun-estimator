@@ -15,7 +15,11 @@ const TFJS_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.m
 const DEEPLAB_URL = "https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js";
 const SAMPLE_WIDTH = 384;
 const AUTO_SAMPLE_DEGREES = 15;
+const HEADING_BIN_COUNT = 360 / AUTO_SAMPLE_DEGREES;
 const COVERAGE_BINS = 48;
+const STABILITY_WINDOW_MS = 650;
+const STABLE_HEADING_DEGREES = 2;
+const STABLE_TILT_DEGREES = 2.5;
 
 const elements = {
   checkButton: document.querySelector("#check-device"),
@@ -26,8 +30,13 @@ const elements = {
   closeCapture: document.querySelector("#close-capture"),
   video: document.querySelector("#camera-preview"),
   overlay: document.querySelector("#segmentation-overlay"),
+  capturedFrame: document.querySelector("#captured-frame"),
+  sampleReview: document.querySelector("#sample-review"),
+  sampleReviewTitle: document.querySelector("#sample-review-title"),
+  sampleReviewMeta: document.querySelector("#sample-review-meta"),
   sampleCanvas: document.querySelector("#sample-canvas"),
   cameraMessage: document.querySelector("#camera-message"),
+  captureCue: document.querySelector("#capture-cue"),
   heading: document.querySelector("#heading-reading"),
   elevation: document.querySelector("#elevation-reading"),
   roll: document.querySelector("#roll-reading"),
@@ -36,7 +45,12 @@ const elements = {
   toggleAuto: document.querySelector("#toggle-auto"),
   coverageBar: document.querySelector("#coverage-bar"),
   coverageReading: document.querySelector("#coverage-reading"),
+  horizonCoverage: document.querySelector("#horizon-coverage"),
+  upperCoverage: document.querySelector("#upper-coverage"),
   modelStatus: document.querySelector("#model-status"),
+  performanceReading: document.querySelector("#performance-reading"),
+  sampleCount: document.querySelector("#sample-count"),
+  sampleList: document.querySelector("#sample-list"),
   fovControl: document.querySelector("#fov-control"),
   fovReading: document.querySelector("#fov-reading"),
   map: document.querySelector("#obstruction-map"),
@@ -53,8 +67,12 @@ const state = {
   location: null,
   autoSampling: true,
   sampling: false,
+  isStable: false,
+  orientationWindow: [],
   lastSampleHeading: null,
   lastSampleTime: 0,
+  nextSampleId: 1,
+  reviewedSampleId: null,
   samples: [],
   coverageBins: new Set(),
   grid: createAngularGrid(),
@@ -183,10 +201,31 @@ function readOrientation(event) {
     roll: Number.isFinite(event.gamma) ? event.gamma : 0,
   };
   state.orientationSource = source;
+  updateStability(state.orientation, performance.now());
   elements.heading.textContent = `${Math.round(state.orientation.heading)}°`;
   elements.elevation.textContent = `${Math.round(state.orientation.elevation)}°`;
   elements.roll.textContent = `${Math.round(state.orientation.roll)}°`;
   maybeAutoSample();
+}
+
+function updateStability(orientation, now) {
+  state.orientationWindow.push({ ...orientation, recordedAt: now });
+  state.orientationWindow = state.orientationWindow.filter(({ recordedAt }) => now - recordedAt <= STABILITY_WINDOW_MS);
+
+  const oldest = state.orientationWindow[0];
+  const coversWindow = oldest && now - oldest.recordedAt >= STABILITY_WINDOW_MS * 0.85;
+  state.isStable = Boolean(
+    coversWindow &&
+      state.orientationWindow.every(
+        (reading) =>
+          circularDistance(reading.heading, orientation.heading) <= STABLE_HEADING_DEGREES &&
+          Math.abs(reading.elevation - orientation.elevation) <= STABLE_TILT_DEGREES &&
+          Math.abs(reading.roll - orientation.roll) <= STABLE_TILT_DEGREES,
+      ),
+  );
+
+  renderCaptureCue();
+  updateCaptureAvailability();
 }
 
 function addOrientationListeners() {
@@ -239,9 +278,38 @@ async function openCaptureTest() {
 }
 
 function updateCaptureAvailability() {
-  const ready = state.cameraReady && Boolean(state.model) && !state.sampling;
-  elements.captureFrame.disabled = !ready;
-  elements.toggleAuto.disabled = !ready;
+  const baseReady = state.cameraReady && Boolean(state.model) && Boolean(state.orientation);
+  elements.captureFrame.disabled = !baseReady || state.sampling || !state.isStable;
+  elements.toggleAuto.disabled = !baseReady || state.sampling;
+  renderCaptureCue();
+}
+
+function renderCaptureCue() {
+  if (!elements.captureCue) return;
+
+  let message = "Point, then hold still";
+  let ready = false;
+
+  if (state.sampling) {
+    message = "Sample locked · analyzing…";
+  } else if (!state.cameraReady) {
+    message = "Waiting for camera";
+  } else if (!state.model) {
+    message = "Loading sky detection…";
+  } else if (!state.orientation) {
+    message = "Waiting for direction sensor";
+  } else if (!state.isStable) {
+    message = "Move slowly, then hold still";
+  } else if (state.coverageBins.has(coverageKey(state.orientation))) {
+    message = "Direction captured · keep turning";
+    ready = true;
+  } else {
+    message = state.autoSampling ? "Hold steady · capturing…" : "Steady · ready to capture";
+    ready = true;
+  }
+
+  elements.captureCue.textContent = message;
+  elements.captureCue.classList.toggle("ready", ready);
 }
 
 function colorMatches(map, offset, color) {
@@ -286,6 +354,18 @@ function drawSegmentationOverlay(classifications, width, height) {
   context.putImageData(image, 0, 0);
 }
 
+function showFrozenFrame(width, height, orientation) {
+  elements.sampleReview.hidden = false;
+  elements.capturedFrame.width = width;
+  elements.capturedFrame.height = height;
+  elements.capturedFrame.getContext("2d").drawImage(elements.sampleCanvas, 0, 0, width, height);
+  elements.overlay.width = width;
+  elements.overlay.height = height;
+  elements.overlay.getContext("2d").clearRect(0, 0, width, height);
+  elements.sampleReviewTitle.textContent = "Analyzing captured view";
+  elements.sampleReviewMeta.textContent = `${Math.round(orientation.heading)}° · ${orientation.elevation >= 25 ? "upper" : "horizon"}`;
+}
+
 function currentOrientation() {
   return state.orientation ?? { heading: 0, elevation: 15, roll: 0 };
 }
@@ -298,9 +378,14 @@ function coverageKey(orientation) {
 
 async function captureSample({ manual = false } = {}) {
   if (!state.cameraReady || !state.model || state.sampling) return;
+  if (!state.orientation || !state.isStable) {
+    elements.modelStatus.textContent = "Hold the phone still until the capture indicator says it is ready.";
+    return;
+  }
+
   state.sampling = true;
   updateCaptureAvailability();
-  elements.modelStatus.textContent = "Analyzing this view on the device…";
+  elements.modelStatus.textContent = "Frame and direction locked together. Analyzing on this device…";
 
   try {
     const videoWidth = elements.video.videoWidth;
@@ -311,12 +396,18 @@ async function captureSample({ manual = false } = {}) {
     elements.sampleCanvas.width = SAMPLE_WIDTH;
     elements.sampleCanvas.height = sampleHeight;
     const context = elements.sampleCanvas.getContext("2d", { willReadFrequently: true });
-    context.drawImage(elements.video, 0, 0, SAMPLE_WIDTH, sampleHeight);
-
-    const segmentation = await state.model.segment(elements.sampleCanvas);
-    const classifications = classificationsFromSegmentation(segmentation);
-    const orientation = currentOrientation();
+    const orientation = { ...state.orientation };
+    const orientationSource = state.orientationSource;
+    const capturedAt = new Date().toISOString();
+    const capturedAtPerformance = performance.now();
     const horizontalFov = Number(elements.fovControl.value);
+    context.drawImage(elements.video, 0, 0, SAMPLE_WIDTH, sampleHeight);
+    showFrozenFrame(SAMPLE_WIDTH, sampleHeight, orientation);
+
+    const inferenceStartedAt = performance.now();
+    const segmentation = await state.model.segment(elements.sampleCanvas);
+    const inferenceMs = performance.now() - inferenceStartedAt;
+    const classifications = classificationsFromSegmentation(segmentation);
 
     drawSegmentationOverlay(classifications, segmentation.width, segmentation.height);
     projectFrameToGrid({
@@ -330,21 +421,34 @@ async function captureSample({ manual = false } = {}) {
       grid: state.grid,
     });
 
-    state.samples.push({
-      capturedAt: new Date().toISOString(),
+    const sample = {
+      id: state.nextSampleId++,
+      capturedAt,
+      capturedAtPerformance,
+      completedAtPerformance: performance.now(),
       heading: orientation.heading,
       elevation: orientation.elevation,
       roll: orientation.roll,
-      orientationSource: state.orientationSource,
+      orientationSource,
       horizontalFov,
+      inferenceMs,
       manual,
-    });
+      classifications,
+      frameWidth: segmentation.width,
+      frameHeight: segmentation.height,
+    };
+    state.samples.push(sample);
+    state.reviewedSampleId = sample.id;
     state.coverageBins.add(coverageKey(orientation));
     state.lastSampleHeading = orientation.heading;
-    state.lastSampleTime = performance.now();
+    state.lastSampleTime = capturedAtPerformance;
     renderAngularMap();
     renderCoverage();
-    elements.modelStatus.textContent = `Sky detection ready · ${window.tf.getBackend()} processing`;
+    renderSampleList();
+    renderPerformance();
+    elements.sampleReviewTitle.textContent = "Accepted sample";
+    elements.sampleReviewMeta.textContent = `${Math.round(orientation.heading)}° · ${(inferenceMs / 1000).toFixed(1)} s`;
+    elements.modelStatus.textContent = `Accepted ${Math.round(orientation.heading)}° in ${(inferenceMs / 1000).toFixed(1)} seconds. Turn about 15° and hold still again.`;
     elements.exportButton.disabled = false;
   } catch (error) {
     console.error(error);
@@ -356,7 +460,7 @@ async function captureSample({ manual = false } = {}) {
 }
 
 function maybeAutoSample() {
-  if (!state.autoSampling || !state.model || !state.cameraReady || state.sampling || !state.orientation) return;
+  if (!state.autoSampling || !state.model || !state.cameraReady || state.sampling || !state.orientation || !state.isStable) return;
 
   const now = performance.now();
   const movedEnough = state.lastSampleHeading === null || circularDistance(state.orientation.heading, state.lastSampleHeading) >= AUTO_SAMPLE_DEGREES;
@@ -369,6 +473,113 @@ function renderCoverage() {
   const coverage = Math.min(100, Math.round((state.coverageBins.size / COVERAGE_BINS) * 100));
   elements.coverageBar.style.width = `${coverage}%`;
   elements.coverageReading.textContent = `${state.samples.length} ${state.samples.length === 1 ? "sample" : "samples"} · ${coverage}% directional coverage`;
+  renderCoverageBand(elements.horizonCoverage, 0);
+  renderCoverageBand(elements.upperCoverage, 1);
+}
+
+function renderCoverageBand(container, elevationBand) {
+  const cells = [];
+  let capturedCount = 0;
+
+  for (let bin = 0; bin < HEADING_BIN_COUNT; bin += 1) {
+    const captured = state.coverageBins.has(`${bin}:${elevationBand}`);
+    if (captured) capturedCount += 1;
+    const cell = document.createElement("span");
+    cell.className = `coverage-cell${captured ? " captured" : ""}`;
+    cells.push(cell);
+  }
+
+  container.replaceChildren(...cells);
+  const bandName = elevationBand === 0 ? "Horizon" : "Upper";
+  container.setAttribute("aria-label", `${bandName}: ${capturedCount} of ${HEADING_BIN_COUNT} directions captured`);
+}
+
+function renderPerformance() {
+  if (!state.samples.length) {
+    elements.performanceReading.textContent = "Timing appears after the first accepted sample.";
+    return;
+  }
+
+  const durations = state.samples.map(({ inferenceMs }) => inferenceMs).sort((a, b) => a - b);
+  const middle = Math.floor(durations.length / 2);
+  const median = durations.length % 2 ? durations[middle] : (durations[middle - 1] + durations[middle]) / 2;
+  const latest = state.samples.at(-1);
+  let rateCopy = "sample rate available after the next sample";
+
+  if (state.samples.length > 1) {
+    const first = state.samples[0];
+    const elapsedMinutes = (latest.completedAtPerformance - first.capturedAtPerformance) / 60000;
+    const samplesPerMinute = (state.samples.length - 1) / elapsedMinutes;
+    rateCopy = `${samplesPerMinute.toFixed(1)} accepted samples/min`;
+  }
+
+  elements.performanceReading.textContent = `Inference: ${(latest.inferenceMs / 1000).toFixed(1)} s last · ${(median / 1000).toFixed(1)} s median · ${rateCopy}.`;
+}
+
+function rebuildCaptureResults() {
+  state.grid = createAngularGrid();
+  state.coverageBins = new Set();
+
+  for (const sample of state.samples) {
+    projectFrameToGrid({
+      classifications: sample.classifications,
+      frameWidth: sample.frameWidth,
+      frameHeight: sample.frameHeight,
+      heading: sample.heading,
+      elevation: sample.elevation,
+      roll: sample.roll,
+      horizontalFov: sample.horizontalFov,
+      grid: state.grid,
+    });
+    state.coverageBins.add(coverageKey(sample));
+  }
+
+  state.lastSampleHeading = state.samples.at(-1)?.heading ?? null;
+  renderAngularMap();
+  renderCoverage();
+  renderPerformance();
+  elements.exportButton.disabled = state.samples.length === 0;
+}
+
+function removeSample(sampleId) {
+  const sample = state.samples.find(({ id }) => id === sampleId);
+  if (!sample) return;
+
+  state.samples = state.samples.filter(({ id }) => id !== sampleId);
+  if (state.reviewedSampleId === sampleId) {
+    state.reviewedSampleId = null;
+    elements.sampleReview.hidden = true;
+  }
+  rebuildCaptureResults();
+  renderSampleList();
+  elements.modelStatus.textContent = `Removed the sample at ${Math.round(sample.heading)}°. Return to that direction and hold still to retake it.`;
+  renderCaptureCue();
+}
+
+function renderSampleList() {
+  elements.sampleCount.textContent = state.samples.length;
+  if (!state.samples.length) {
+    const empty = document.createElement("li");
+    empty.className = "empty-samples";
+    empty.textContent = "No samples accepted yet.";
+    elements.sampleList.replaceChildren(empty);
+    return;
+  }
+
+  elements.sampleList.replaceChildren(
+    ...state.samples.map((sample, index) => {
+      const item = document.createElement("li");
+      const description = document.createElement("span");
+      const removeButton = document.createElement("button");
+      description.textContent = `${index + 1}. ${Math.round(sample.heading)}° · ${sample.elevation >= 25 ? "upper" : "horizon"} · ${(sample.inferenceMs / 1000).toFixed(1)} s`;
+      removeButton.type = "button";
+      removeButton.textContent = "Remove & retake";
+      removeButton.setAttribute("aria-label", `Remove sample ${index + 1} at ${Math.round(sample.heading)} degrees so it can be retaken`);
+      removeButton.addEventListener("click", () => removeSample(sample.id));
+      item.append(description, removeButton);
+      return item;
+    }),
+  );
 }
 
 function renderAngularMap() {
@@ -401,6 +612,7 @@ function toggleAutoSampling() {
 }
 
 function exportDiagnostics() {
+  const exportedSamples = state.samples.map(({ classifications, capturedAtPerformance, completedAtPerformance, ...sample }) => sample);
   const payload = {
     format: "garden-sun-capture-diagnostic",
     version: 1,
@@ -413,7 +625,10 @@ function exportDiagnostics() {
     },
     location: state.location,
     grid: { width: state.grid.width, height: state.grid.height, classifications: Array.from(resolveAngularGrid(state.grid)) },
-    samples: state.samples,
+    performance: {
+      inferenceMilliseconds: state.samples.map(({ inferenceMs }) => Math.round(inferenceMs)),
+    },
+    samples: exportedSamples,
   };
   const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -428,6 +643,8 @@ function closeCaptureTest() {
   state.stream?.getTracks().forEach((track) => track.stop());
   state.stream = null;
   state.cameraReady = false;
+  state.isStable = false;
+  state.orientationWindow = [];
   elements.video.srcObject = null;
   elements.captureLab.hidden = true;
   elements.cameraMessage.hidden = false;
@@ -446,6 +663,8 @@ elements.fovControl?.addEventListener("input", () => {
 });
 
 renderAngularMap();
+renderCoverage();
+renderSampleList();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
