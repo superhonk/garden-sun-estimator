@@ -6,7 +6,7 @@ This document is the living project description and source of truth for the prod
 
 The project is currently in the definition and prototyping stage.
 
-The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, synchronized frame-and-orientation sampling, measured inference timing, guided hold-still capture, a frozen mask review, two-band directional coverage, sample removal and retaking, an approximate azimuth/elevation obstruction map, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. An initial iPhone 12 field test confirmed that camera access and segmentation work and that the masks appear accurate, but it also exposed visible inference latency during movement. The synchronization changes now require another field test. The prototype does not yet calculate monthly sunlight.
+The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, synchronized frame-and-orientation sampling, measured inference timing, guided hold-still capture, a frozen mask review, automatic solstice-path calculation, a live and map-based solar-corridor overlay, two-pass next-target guidance, sample removal and retaking, an approximate azimuth/elevation obstruction map, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. Initial iPhone 12 tests confirmed that camera access, segmentation, and synchronized capture work and that the masks appear accurate. The solar-corridor guidance now requires field testing. The prototype does not yet calculate monthly sunlight.
 
 ## Summary
 
@@ -210,7 +210,25 @@ The synchronized guided-capture loop has now been implemented. It:
 
 An initial follow-up test confirmed that the synchronized capture appears to work on the iPhone 12. Repeatability at the same spot and testing on at least one Android phone remain outstanding. Those tests should confirm that the recorded heading does not change while inference runs, samples can be removed and retaken, and repeated sweeps produce similar obstruction maps.
 
-Solar-path and monthly-duration calculation should follow successful capture validation. It depends on a directionally trustworthy obstruction map, whereas adding it first could produce precise-looking results from misaligned capture data.
+Monthly-duration calculation should follow successful capture validation. It depends on a directionally trustworthy obstruction map, whereas adding it first could produce precise-looking results from misaligned capture data.
+
+### Automatic solar-corridor capture milestone
+
+Capture guidance uses the full geometric envelope between the winter- and summer-solstice trajectories. This is deliberately independent from the foliage months used for the eventual results. At temperate latitudes, the winter path adds useful low-sky coverage without normally requiring another camera pass, while the summer path defines the widest sunrise-to-sunset range. Using the complete yearly envelope avoids asking the user to choose months before capture and preserves the option to add leaf-off calculations later.
+
+The prototype now:
+
+- calculates the highest and lowest yearly Sun paths automatically from GPS latitude without a server or third-party API;
+- supports both hemispheres and handles locations where the Sun does not rise on one solstice;
+- expands the calculated paths with a four-degree capture margin for sensor and alignment uncertainty;
+- displays the two solstice trajectories and shaded capture corridor on the angular obstruction map;
+- projects both trajectories into the live camera view using the current heading, elevation, roll, and assumed field of view;
+- guides the user to the next required view, beginning at the sunrise side of the lower pass and returning across the upper pass;
+- limits automatic sampling to views intersecting the solar corridor when location is available;
+- calculates completion from required solar-corridor views rather than all 360 degrees; and
+- falls back to full directional coverage if location is unavailable.
+
+The next field test should check whether the live trajectory lines remain plausibly aligned while the phone rotates, whether the next-target directions are easy to follow, whether the two-pass order feels natural, and whether the four-degree margin is sufficient when compass readings fluctuate.
 
 ## Non-functional requirements
 
@@ -353,7 +371,8 @@ The product is successful when:
 - `styles.css` contains the responsive visual styling.
 - `app.js` contains permissions, live capture, on-device segmentation, obstruction-map assembly, diagnostic export, and service-worker registration.
 - `geometry.mjs` contains canopy-gap closing and angular projection logic.
-- `geometry.test.mjs` tests the geometry and canopy rules with Node's built-in test runner.
+- `solar.mjs` calculates solstice trajectories and the automatic capture corridor.
+- `geometry.test.mjs` tests geometry, canopy rules, and solar guidance with Node's built-in test runner.
 - `manifest.webmanifest` makes the site installable where supported.
 - `service-worker.js` caches the application shell for repeat and limited offline use.
 - `.github/workflows/deploy-pages.yml` deploys the static site to GitHub Pages after pushes to `main`.

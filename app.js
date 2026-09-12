@@ -9,7 +9,13 @@ import {
   normalizeHeading,
   projectFrameToGrid,
   resolveAngularGrid,
+  verticalFieldOfView,
 } from "./geometry.mjs";
+import {
+  createSolarGuidance,
+  signedAngularDifference,
+  targetForCaptureKey,
+} from "./solar.mjs";
 
 const TFJS_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 const DEEPLAB_URL = "https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js";
@@ -29,6 +35,9 @@ const elements = {
   captureLab: document.querySelector("#capture-lab"),
   closeCapture: document.querySelector("#close-capture"),
   video: document.querySelector("#camera-preview"),
+  solarOverlay: document.querySelector("#solar-overlay"),
+  solarGuideStatus: document.querySelector("#solar-guide-status"),
+  nextTarget: document.querySelector("#next-target"),
   overlay: document.querySelector("#segmentation-overlay"),
   capturedFrame: document.querySelector("#captured-frame"),
   sampleReview: document.querySelector("#sample-review"),
@@ -65,6 +74,9 @@ const state = {
   orientation: null,
   orientationSource: "unavailable",
   location: null,
+  solarGuidance: null,
+  requiredKeys: new Set(),
+  solarOverlayFrame: null,
   autoSampling: true,
   sampling: false,
   isStable: false,
@@ -169,11 +181,20 @@ function requestLocation() {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         state.location = { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy };
+        state.solarGuidance = createSolarGuidance(coords.latitude);
+        state.requiredKeys = new Set(state.solarGuidance.requiredKeys);
         elements.location.textContent = `±${Math.round(coords.accuracy)} m`;
+        elements.solarGuideStatus.textContent = `Ready at ${Math.abs(coords.latitude).toFixed(1)}° ${coords.latitude >= 0 ? "north" : "south"}. Capture the highlighted area between the lowest and highest yearly Sun paths.`;
+        renderAngularMap();
+        renderCoverage();
+        renderNextTarget();
+        queueSolarOverlayRender();
         resolve(state.location);
       },
       () => {
         elements.location.textContent = "Unavailable";
+        elements.solarGuideStatus.textContent = "Location is unavailable, so the prototype will fall back to full directional coverage.";
+        elements.nextTarget.textContent = "Capture both the horizon and upper pass around the full circle.";
         resolve(null);
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
@@ -205,6 +226,8 @@ function readOrientation(event) {
   elements.heading.textContent = `${Math.round(state.orientation.heading)}°`;
   elements.elevation.textContent = `${Math.round(state.orientation.elevation)}°`;
   elements.roll.textContent = `${Math.round(state.orientation.roll)}°`;
+  renderNextTarget();
+  queueSolarOverlayRender();
   maybeAutoSample();
 }
 
@@ -300,6 +323,8 @@ function renderCaptureCue() {
     message = "Waiting for direction sensor";
   } else if (!state.isStable) {
     message = "Move slowly, then hold still";
+  } else if (state.solarGuidance && !state.requiredKeys.has(coverageKey(state.orientation))) {
+    message = "Outside Sun corridor · follow the target";
   } else if (state.coverageBins.has(coverageKey(state.orientation))) {
     message = "Direction captured · keep turning";
     ready = true;
@@ -372,14 +397,74 @@ function currentOrientation() {
 
 function coverageKey(orientation) {
   const headingBin = Math.floor(normalizeHeading(orientation.heading) / AUTO_SAMPLE_DEGREES);
-  const elevationBand = orientation.elevation >= 25 ? 1 : 0;
+  const elevationBand = orientation.elevation >= (state.solarGuidance?.elevationSplit ?? 25) ? 1 : 0;
   return `${headingBin}:${elevationBand}`;
+}
+
+function allCoverageKeys() {
+  const keys = new Set();
+  for (let band = 0; band < 2; band += 1) {
+    for (let bin = 0; bin < HEADING_BIN_COUNT; bin += 1) keys.add(`${bin}:${band}`);
+  }
+  return keys;
+}
+
+function activeRequiredKeys() {
+  return state.solarGuidance ? state.requiredKeys : allCoverageKeys();
+}
+
+function nextTargetKey() {
+  const sequence = state.solarGuidance?.sequence ?? [...allCoverageKeys()];
+  return sequence.find((key) => !state.coverageBins.has(key)) ?? null;
+}
+
+function captureTarget(key) {
+  return state.solarGuidance?.targets[key] ?? targetForCaptureKey(
+    key,
+    state.solarGuidance?.headingStep ?? AUTO_SAMPLE_DEGREES,
+    state.solarGuidance?.elevationSplit ?? 25,
+  );
+}
+
+function cardinalDirection(azimuth) {
+  const labels = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+  return labels[Math.round(normalizeHeading(azimuth) / 45) % labels.length];
+}
+
+function renderNextTarget() {
+  if (!state.solarGuidance) return;
+
+  const key = nextTargetKey();
+  if (!key) {
+    elements.nextTarget.textContent = "Solar corridor captured. You can review or retake individual samples below.";
+    return;
+  }
+
+  const target = captureTarget(key);
+  const level = target.elevationBand === 0 ? "low" : "upward";
+  let movement = `Aim ${level} toward ${cardinalDirection(target.azimuth)} (${Math.round(target.azimuth)}°).`;
+
+  if (state.orientation) {
+    const turn = signedAngularDifference(target.azimuth, state.orientation.heading);
+    const tilt = target.altitude - state.orientation.elevation;
+    const directions = [];
+    if (Math.abs(turn) > 7) directions.push(`turn ${Math.round(Math.abs(turn))}° ${turn > 0 ? "right" : "left"}`);
+    if (Math.abs(tilt) > 7) directions.push(`tilt ${Math.round(Math.abs(tilt))}° ${tilt > 0 ? "up" : "down"}`);
+    movement = directions.length ? `${directions.join(" and ")}.` : "Target in view—hold still to capture it.";
+  }
+
+  const capturedRequired = [...state.requiredKeys].filter((requiredKey) => state.coverageBins.has(requiredKey)).length;
+  elements.nextTarget.textContent = `Next: ${movement} ${capturedRequired} of ${state.requiredKeys.size} required views captured.`;
 }
 
 async function captureSample({ manual = false } = {}) {
   if (!state.cameraReady || !state.model || state.sampling) return;
   if (!state.orientation || !state.isStable) {
     elements.modelStatus.textContent = "Hold the phone still until the capture indicator says it is ready.";
+    return;
+  }
+  if (state.solarGuidance && !state.requiredKeys.has(coverageKey(state.orientation))) {
+    elements.modelStatus.textContent = "This view is outside the yearly Sun corridor. Follow the next-target guidance.";
     return;
   }
 
@@ -444,11 +529,12 @@ async function captureSample({ manual = false } = {}) {
     state.lastSampleTime = capturedAtPerformance;
     renderAngularMap();
     renderCoverage();
+    renderNextTarget();
     renderSampleList();
     renderPerformance();
     elements.sampleReviewTitle.textContent = "Accepted sample";
     elements.sampleReviewMeta.textContent = `${Math.round(orientation.heading)}° · ${(inferenceMs / 1000).toFixed(1)} s`;
-    elements.modelStatus.textContent = `Accepted ${Math.round(orientation.heading)}° in ${(inferenceMs / 1000).toFixed(1)} seconds. Turn about 15° and hold still again.`;
+    elements.modelStatus.textContent = `Accepted ${Math.round(orientation.heading)}° in ${(inferenceMs / 1000).toFixed(1)} seconds. Follow the next target and hold still again.`;
     elements.exportButton.disabled = false;
   } catch (error) {
     console.error(error);
@@ -463,16 +549,21 @@ function maybeAutoSample() {
   if (!state.autoSampling || !state.model || !state.cameraReady || state.sampling || !state.orientation || !state.isStable) return;
 
   const now = performance.now();
-  const movedEnough = state.lastSampleHeading === null || circularDistance(state.orientation.heading, state.lastSampleHeading) >= AUTO_SAMPLE_DEGREES;
+  const movedEnough = state.lastSampleHeading === null || circularDistance(state.orientation.heading, state.lastSampleHeading) >= AUTO_SAMPLE_DEGREES / 2;
   const waitedEnough = now - state.lastSampleTime >= 700;
   const newCoverageBin = !state.coverageBins.has(coverageKey(state.orientation));
-  if (movedEnough && waitedEnough && newCoverageBin) captureSample();
+  const requiredView = !state.solarGuidance || state.requiredKeys.has(coverageKey(state.orientation));
+  if (movedEnough && waitedEnough && newCoverageBin && requiredView) captureSample();
 }
 
 function renderCoverage() {
-  const coverage = Math.min(100, Math.round((state.coverageBins.size / COVERAGE_BINS) * 100));
+  const requiredKeys = activeRequiredKeys();
+  const capturedRequired = [...requiredKeys].filter((key) => state.coverageBins.has(key)).length;
+  const coverage = requiredKeys.size ? Math.min(100, Math.round((capturedRequired / requiredKeys.size) * 100)) : 0;
   elements.coverageBar.style.width = `${coverage}%`;
-  elements.coverageReading.textContent = `${state.samples.length} ${state.samples.length === 1 ? "sample" : "samples"} · ${coverage}% directional coverage`;
+  elements.coverageReading.textContent = state.solarGuidance
+    ? `${capturedRequired} of ${requiredKeys.size} required views · ${coverage}% solar-corridor coverage`
+    : `${state.samples.length} ${state.samples.length === 1 ? "sample" : "samples"} · ${coverage}% directional coverage`;
   renderCoverageBand(elements.horizonCoverage, 0);
   renderCoverageBand(elements.upperCoverage, 1);
 }
@@ -480,18 +571,23 @@ function renderCoverage() {
 function renderCoverageBand(container, elevationBand) {
   const cells = [];
   let capturedCount = 0;
+  let requiredCount = 0;
+  const requiredKeys = activeRequiredKeys();
 
   for (let bin = 0; bin < HEADING_BIN_COUNT; bin += 1) {
-    const captured = state.coverageBins.has(`${bin}:${elevationBand}`);
+    const key = `${bin}:${elevationBand}`;
+    const required = requiredKeys.has(key);
+    const captured = state.coverageBins.has(key);
+    if (required) requiredCount += 1;
     if (captured) capturedCount += 1;
     const cell = document.createElement("span");
-    cell.className = `coverage-cell${captured ? " captured" : ""}`;
+    cell.className = `coverage-cell${required ? " required" : ""}${captured ? " captured" : ""}`;
     cells.push(cell);
   }
 
   container.replaceChildren(...cells);
   const bandName = elevationBand === 0 ? "Horizon" : "Upper";
-  container.setAttribute("aria-label", `${bandName}: ${capturedCount} of ${HEADING_BIN_COUNT} directions captured`);
+  container.setAttribute("aria-label", `${bandName}: ${capturedCount} captured, ${requiredCount} required`);
 }
 
 function renderPerformance() {
@@ -553,6 +649,7 @@ function removeSample(sampleId) {
   rebuildCaptureResults();
   renderSampleList();
   elements.modelStatus.textContent = `Removed the sample at ${Math.round(sample.heading)}°. Return to that direction and hold still to retake it.`;
+  renderNextTarget();
   renderCaptureCue();
 }
 
@@ -604,6 +701,143 @@ function renderAngularMap() {
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, elements.map.width, elements.map.height);
   context.drawImage(buffer, 0, 0, elements.map.width, elements.map.height);
+  drawSolarGuidanceOnMap(context);
+}
+
+function drawSolarGuidanceOnMap(context) {
+  const guidance = state.solarGuidance;
+  if (!guidance) return;
+
+  const corridorImage = context.createImageData(guidance.width, guidance.height);
+  for (let altitude = 0; altitude < guidance.height; altitude += 1) {
+    for (let azimuth = 0; azimuth < guidance.width; azimuth += 1) {
+      if (!guidance.corridorMask[altitude * guidance.width + azimuth]) continue;
+      const row = guidance.height - 1 - altitude;
+      const offset = (row * guidance.width + azimuth) * 4;
+      corridorImage.data.set([239, 184, 76, 55], offset);
+    }
+  }
+
+  const corridorCanvas = document.createElement("canvas");
+  corridorCanvas.width = guidance.width;
+  corridorCanvas.height = guidance.height;
+  corridorCanvas.getContext("2d").putImageData(corridorImage, 0, 0);
+  context.drawImage(corridorCanvas, 0, 0, elements.map.width, elements.map.height);
+  drawMapTrajectory(context, guidance.highestPath, "#c88700");
+  drawMapTrajectory(context, guidance.lowestPath, "#df6038");
+}
+
+function drawMapTrajectory(context, path, color) {
+  if (!path.length) return;
+  context.beginPath();
+  context.lineWidth = 3;
+  context.strokeStyle = color;
+  let previous = null;
+
+  for (const point of path) {
+    const x = (point.azimuth / 360) * elements.map.width;
+    const y = elements.map.height - (point.altitude / 90) * elements.map.height;
+    if (!previous || Math.abs(point.azimuth - previous.azimuth) > 180) context.moveTo(x, y);
+    else context.lineTo(x, y);
+    previous = point;
+  }
+  context.stroke();
+}
+
+function projectSolarPoint(point, orientation, width, height, horizontalFov) {
+  const azimuthOffset = signedAngularDifference(point.azimuth, orientation.heading);
+  if (Math.abs(azimuthOffset) >= 89) return null;
+  const verticalFov = verticalFieldOfView(horizontalFov, width, height);
+  const rotatedX = Math.tan((azimuthOffset * Math.PI) / 180) / Math.tan((horizontalFov * Math.PI) / 360);
+  const elevationOffset = orientation.elevation - point.altitude;
+  const rotatedY = Math.tan((elevationOffset * Math.PI) / 180) / Math.tan((verticalFov * Math.PI) / 360);
+  const rollRadians = (-orientation.roll * Math.PI) / 180;
+  const rollCosine = Math.cos(rollRadians);
+  const rollSine = Math.sin(rollRadians);
+  const normalizedX = rotatedX * rollCosine + rotatedY * rollSine;
+  const normalizedY = -rotatedX * rollSine + rotatedY * rollCosine;
+  return { x: ((normalizedX + 1) / 2) * width, y: ((normalizedY + 1) / 2) * height, normalizedX, normalizedY };
+}
+
+function drawLiveTrajectory(context, path, orientation, width, height, horizontalFov, color) {
+  context.beginPath();
+  context.lineWidth = 3;
+  context.strokeStyle = color;
+  context.setLineDash([8, 6]);
+  let drawing = false;
+
+  for (const point of path) {
+    const projected = projectSolarPoint(point, orientation, width, height, horizontalFov);
+    const visible = projected && Math.abs(projected.normalizedX) <= 1.15 && Math.abs(projected.normalizedY) <= 1.15;
+    if (!visible) {
+      drawing = false;
+      continue;
+    }
+    if (!drawing) context.moveTo(projected.x, projected.y);
+    else context.lineTo(projected.x, projected.y);
+    drawing = true;
+  }
+  context.stroke();
+  context.setLineDash([]);
+}
+
+function drawTargetMarker(context, orientation, width, height, horizontalFov) {
+  const key = nextTargetKey();
+  if (!key || !state.solarGuidance) return;
+  const target = captureTarget(key);
+  const projected = projectSolarPoint(target, orientation, width, height, horizontalFov);
+
+  if (!projected) {
+    const turn = signedAngularDifference(target.azimuth, orientation.heading);
+    const x = turn > 0 ? width - 16 : 16;
+    context.fillStyle = "rgba(255, 253, 248, 0.95)";
+    context.beginPath();
+    context.arc(x, height / 2, 8, 0, Math.PI * 2);
+    context.fill();
+    return;
+  }
+
+  const x = Math.max(18, Math.min(width - 18, projected.x));
+  const y = Math.max(18, Math.min(height - 18, projected.y));
+  context.fillStyle = "rgba(255, 253, 248, 0.96)";
+  context.strokeStyle = "#17352a";
+  context.lineWidth = 3;
+  context.beginPath();
+  context.arc(x, y, 12, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.beginPath();
+  context.moveTo(x - 5, y);
+  context.lineTo(x + 5, y);
+  context.moveTo(x, y - 5);
+  context.lineTo(x, y + 5);
+  context.stroke();
+}
+
+function renderSolarOverlay() {
+  state.solarOverlayFrame = null;
+  const guidance = state.solarGuidance;
+  const orientation = state.orientation;
+  if (!guidance || !orientation || !state.cameraReady) return;
+
+  const width = elements.solarOverlay.clientWidth;
+  const height = elements.solarOverlay.clientHeight;
+  if (!width || !height) return;
+  const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  elements.solarOverlay.width = Math.round(width * pixelRatio);
+  elements.solarOverlay.height = Math.round(height * pixelRatio);
+  const context = elements.solarOverlay.getContext("2d");
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  const horizontalFov = Number(elements.fovControl.value);
+  drawLiveTrajectory(context, guidance.highestPath, orientation, width, height, horizontalFov, "#ffe27a");
+  drawLiveTrajectory(context, guidance.lowestPath, orientation, width, height, horizontalFov, "#ff9368");
+  drawTargetMarker(context, orientation, width, height, horizontalFov);
+}
+
+function queueSolarOverlayRender() {
+  if (state.solarOverlayFrame !== null) return;
+  state.solarOverlayFrame = requestAnimationFrame(renderSolarOverlay);
 }
 
 function toggleAutoSampling() {
@@ -615,7 +849,7 @@ function exportDiagnostics() {
   const exportedSamples = state.samples.map(({ classifications, capturedAtPerformance, completedAtPerformance, ...sample }) => sample);
   const payload = {
     format: "garden-sun-capture-diagnostic",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     notice: "Contains precise location when access was granted. Stored only in this download.",
     device: {
@@ -624,6 +858,13 @@ function exportDiagnostics() {
       camera: state.stream?.getVideoTracks()[0]?.getSettings() ?? null,
     },
     location: state.location,
+    solarGuidance: state.solarGuidance
+      ? {
+          latitude: state.solarGuidance.latitude,
+          marginDegrees: state.solarGuidance.marginDegrees,
+          requiredCaptureKeys: state.solarGuidance.requiredKeys,
+        }
+      : null,
     grid: { width: state.grid.width, height: state.grid.height, classifications: Array.from(resolveAngularGrid(state.grid)) },
     performance: {
       inferenceMilliseconds: state.samples.map(({ inferenceMs }) => Math.round(inferenceMs)),
@@ -660,7 +901,9 @@ elements.toggleAuto?.addEventListener("click", toggleAutoSampling);
 elements.exportButton?.addEventListener("click", exportDiagnostics);
 elements.fovControl?.addEventListener("input", () => {
   elements.fovReading.textContent = `${elements.fovControl.value}°`;
+  queueSolarOverlayRender();
 });
+window.addEventListener("resize", queueSolarOverlayRender);
 
 renderAngularMap();
 renderCoverage();

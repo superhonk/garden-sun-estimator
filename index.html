@@ -60,8 +60,23 @@
           rotate from one fixed spot—do not walk around.
         </div>
 
+        <section class="solar-guide" aria-labelledby="solar-guide-title">
+          <div class="solar-guide-icon" aria-hidden="true">☀</div>
+          <div>
+            <p class="eyebrow">Automatic capture area</p>
+            <h3 id="solar-guide-title">Follow the yearly Sun corridor</h3>
+            <p id="solar-guide-status">Waiting for location to calculate the winter and summer paths.</p>
+            <div class="trajectory-legend" aria-label="Sun path colors">
+              <span><i class="path-line summer"></i>Highest path</span>
+              <span><i class="path-line winter"></i>Lowest path</span>
+              <span><i class="corridor-fill"></i>Area to capture</span>
+            </div>
+          </div>
+        </section>
+
         <div class="camera-stage">
           <video id="camera-preview" playsinline muted aria-label="Live rear camera preview"></video>
+          <canvas id="solar-overlay" aria-label="Highest and lowest yearly Sun paths with capture guidance"></canvas>
           <div class="camera-guide" aria-hidden="true"><span></span></div>
           <p id="capture-cue" class="capture-cue" role="status" aria-live="polite">Point, then hold still</p>
           <p id="camera-message" class="camera-message">Starting camera…</p>
@@ -94,8 +109,12 @@
             <p class="eyebrow">Guided sweep</p>
             <h3 id="sweep-title">Rotate slowly through two passes</h3>
             <p id="sweep-guidance" class="muted-copy">
-              First keep the camera near the horizon. Then repeat while pointing upward to include
-              taller trees and overhead branches.
+              Start near sunrise and follow the highlighted corridor toward sunset. The guide will
+              ask for a return pass when higher sky still needs coverage.
+            </p>
+
+            <p id="next-target" class="next-target" role="status" aria-live="polite">
+              Waiting for location to choose the first view.
             </p>
 
             <div class="progress-track" aria-hidden="true"><span id="coverage-bar"></span></div>
@@ -157,6 +176,8 @@
               <li><span class="legend-swatch tree"></span>Tree canopy</li>
               <li><span class="legend-swatch obstruction"></span>Other obstruction</li>
               <li><span class="legend-swatch unknown"></span>Not captured</li>
+              <li><span class="path-line summer"></span>Highest Sun path</li>
+              <li><span class="path-line winter"></span>Lowest Sun path</li>
             </ul>
           </section>
         </div>
@@ -176,10 +197,10 @@
 
       <section class="status-panel" aria-labelledby="status-title">
         <p class="eyebrow">Current status</p>
-        <h2 id="status-title">Synchronized capture is ready to test</h2>
+        <h2 id="status-title">Solar-guided capture is ready to test</h2>
         <p>
-          This version locks each camera frame to its direction before analysis, measures processing
-          time, and keeps every mask aligned with a frozen frame. It does not yet calculate monthly sunlight.
+          This version calculates the yearly Sun corridor from location, overlays its highest and
+          lowest paths, and guides capture through the required views. It does not yet calculate monthly sunlight.
         </p>
       </section>
     </main>

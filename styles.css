@@ -292,6 +292,79 @@ h3 {
   color: var(--ink);
 }
 
+.solar-guide {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  width: min(100%, 32rem);
+  margin: 0 auto 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(239, 184, 76, 0.55);
+  border-radius: 1rem;
+  background: rgba(255, 253, 248, 0.86);
+}
+
+.solar-guide-icon {
+  display: grid;
+  place-items: center;
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 50%;
+  color: #754b00;
+  background: rgba(239, 184, 76, 0.3);
+  font-size: 1.35rem;
+}
+
+.solar-guide .eyebrow {
+  margin-bottom: 0.25rem;
+}
+
+.solar-guide h3 {
+  font-size: 1.1rem;
+}
+
+.solar-guide p:last-of-type {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.trajectory-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.trajectory-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.path-line {
+  display: inline-block;
+  width: 1.25rem;
+  height: 0;
+  border-top: 3px solid;
+  border-radius: 999px;
+}
+
+.path-line.summer { border-color: #ffd66b; }
+.path-line.winter { border-color: #ff8b5c; }
+
+.corridor-fill {
+  width: 1rem;
+  height: 0.65rem;
+  border-radius: 0.2rem;
+  background: rgba(255, 211, 100, 0.3);
+  border: 1px solid rgba(117, 75, 0, 0.28);
+}
+
 .camera-stage {
   position: relative;
   overflow: hidden;
@@ -314,6 +387,16 @@ h3 {
 
 .camera-stage canvas {
   pointer-events: none;
+}
+
+#solar-overlay {
+  z-index: 1;
+}
+
+.camera-guide,
+.capture-cue,
+.camera-message {
+  z-index: 2;
 }
 
 .capture-cue {
@@ -519,6 +602,17 @@ h3 {
   font-size: 0.85rem;
 }
 
+.next-target {
+  margin: 0 0 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.75rem;
+  color: var(--ink);
+  background: rgba(239, 184, 76, 0.16);
+  font-size: 0.9rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
 .model-status { min-height: 2.6em; }
 
 .performance-reading {
@@ -553,10 +647,17 @@ h3 {
 .coverage-cell {
   min-width: 0;
   border-radius: 2px;
-  background: var(--paper-deep);
+  border: 1px solid rgba(23, 53, 42, 0.08);
+  background: transparent;
+}
+
+.coverage-cell.required {
+  border-color: rgba(151, 101, 7, 0.2);
+  background: rgba(239, 184, 76, 0.3);
 }
 
 .coverage-cell.captured {
+  border-color: var(--green);
   background: var(--green);
 }
 
