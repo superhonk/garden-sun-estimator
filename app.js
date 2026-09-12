@@ -16,6 +16,11 @@ import {
   signedAngularDifference,
   targetForCaptureKey,
 } from "./solar.mjs";
+import {
+  cameraPoseFromDeviceOrientation,
+  projectDirectionToCamera,
+  solarDirection,
+} from "./orientation.mjs";
 
 const TFJS_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 const DEEPLAB_URL = "https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js";
@@ -203,24 +208,27 @@ function requestLocation() {
 }
 
 function readOrientation(event) {
-  let heading = null;
+  let compassHeading = null;
   let source = "relative orientation";
 
   if (Number.isFinite(event.webkitCompassHeading)) {
-    heading = event.webkitCompassHeading;
+    compassHeading = event.webkitCompassHeading;
     source = "iOS compass";
   } else if (Number.isFinite(event.alpha)) {
-    heading = normalizeHeading(360 - event.alpha);
     source = event.absolute ? "absolute orientation" : "relative orientation";
   }
 
-  if (!Number.isFinite(heading) || !Number.isFinite(event.beta)) return;
+  const screenAngle = Number(screen.orientation?.angle ?? window.orientation ?? 0);
+  const orientation = cameraPoseFromDeviceOrientation({
+    alpha: event.alpha,
+    beta: event.beta,
+    gamma: event.gamma ?? 0,
+    compassHeading,
+    screenAngle,
+  });
+  if (!orientation) return;
 
-  state.orientation = {
-    heading: normalizeHeading(heading),
-    elevation: Math.max(-30, Math.min(90, 90 - event.beta)),
-    roll: Number.isFinite(event.gamma) ? event.gamma : 0,
-  };
+  state.orientation = orientation;
   state.orientationSource = source;
   updateStability(state.orientation, performance.now());
   elements.heading.textContent = `${Math.round(state.orientation.heading)}°`;
@@ -502,6 +510,7 @@ async function captureSample({ manual = false } = {}) {
       heading: orientation.heading,
       elevation: orientation.elevation,
       roll: orientation.roll,
+      cameraPose: orientation.pose,
       horizontalFov,
       grid: state.grid,
     });
@@ -514,6 +523,7 @@ async function captureSample({ manual = false } = {}) {
       heading: orientation.heading,
       elevation: orientation.elevation,
       roll: orientation.roll,
+      pose: orientation.pose,
       orientationSource,
       horizontalFov,
       inferenceMs,
@@ -624,6 +634,7 @@ function rebuildCaptureResults() {
       heading: sample.heading,
       elevation: sample.elevation,
       roll: sample.roll,
+      cameraPose: sample.pose,
       horizontalFov: sample.horizontalFov,
       grid: state.grid,
     });
@@ -745,6 +756,21 @@ function drawMapTrajectory(context, path, color) {
 }
 
 function projectSolarPoint(point, orientation, width, height, horizontalFov) {
+  if (orientation.pose) {
+    const verticalFov = verticalFieldOfView(horizontalFov, width, height);
+    const projected = projectDirectionToCamera(
+      solarDirection(point.azimuth, point.altitude),
+      orientation.pose,
+      horizontalFov,
+      verticalFov,
+    );
+    if (!projected) return null;
+    return {
+      x: ((projected.normalizedX + 1) / 2) * width,
+      y: ((projected.normalizedY + 1) / 2) * height,
+      ...projected,
+    };
+  }
   const azimuthOffset = signedAngularDifference(point.azimuth, orientation.heading);
   if (Math.abs(azimuthOffset) >= 89) return null;
   const verticalFov = verticalFieldOfView(horizontalFov, width, height);
@@ -849,7 +875,7 @@ function exportDiagnostics() {
   const exportedSamples = state.samples.map(({ classifications, capturedAtPerformance, completedAtPerformance, ...sample }) => sample);
   const payload = {
     format: "garden-sun-capture-diagnostic",
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     notice: "Contains precise location when access was granted. Stored only in this download.",
     device: {

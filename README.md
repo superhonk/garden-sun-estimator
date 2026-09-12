@@ -230,6 +230,21 @@ The prototype now:
 
 The next field test should check whether the live trajectory lines remain plausibly aligned while the phone rotates, whether the next-target directions are easy to follow, whether the two-pass order feels natural, and whether the four-degree margin is sufficient when compass readings fluctuate.
 
+### Camera-orientation correction milestone
+
+The first live solar-overlay test on an iPhone 12 found that the trajectories could rotate vertically or appear inverted while the camera moved. The cause was the prototype's direct interpretation of the browser's raw `beta` and `gamma` Euler angles as camera elevation and roll. Those angles describe rotations around device axes, can change representation abruptly, and do not directly describe the rear camera's view.
+
+The prototype now:
+
+- converts device-orientation angles into a three-dimensional camera basis consisting of forward, right, and up vectors;
+- accounts for the browser screen's portrait or landscape rotation;
+- aligns that camera basis with the iPhone compass heading when it is available;
+- projects both the live solar paths and segmented camera pixels with the same camera basis;
+- derives the displayed elevation and roll from the resulting camera vectors rather than raw sensor angles; and
+- includes regression tests for level, upward-tilted, and rolled camera poses.
+
+The next iPhone field test should keep the phone in portrait orientation and verify that both trajectories remain attached to the outdoor scene while panning and tilting. Small jitter from compass noise is expected, but the paths should no longer turn vertical or invert. After deploying this change, reload the page once so the updated offline cache is activated.
+
 ## Non-functional requirements
 
 - Controls and instructions must remain legible in bright sunlight.
@@ -372,6 +387,7 @@ The product is successful when:
 - `app.js` contains permissions, live capture, on-device segmentation, obstruction-map assembly, diagnostic export, and service-worker registration.
 - `geometry.mjs` contains canopy-gap closing and angular projection logic.
 - `solar.mjs` calculates solstice trajectories and the automatic capture corridor.
+- `orientation.mjs` converts device sensor rotations into a camera basis and projects world directions into the camera view.
 - `geometry.test.mjs` tests geometry, canopy rules, and solar guidance with Node's built-in test runner.
 - `manifest.webmanifest` makes the site installable where supported.
 - `service-worker.js` caches the application shell for repeat and limited offline use.

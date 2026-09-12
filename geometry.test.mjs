@@ -21,6 +21,15 @@ import {
   solarPositionFromHourAngle,
   targetForCaptureKey,
 } from "./solar.mjs";
+import {
+  cameraPoseFromDeviceOrientation,
+  projectDirectionToCamera,
+  solarDirection,
+} from "./orientation.mjs";
+
+function approximately(actual, expected, tolerance = 0.001) {
+  assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not within ${tolerance} of ${expected}`);
+}
 
 test("normalizes headings and measures across north", () => {
   assert.equal(normalizeHeading(-10), 350);
@@ -72,6 +81,57 @@ test("projects the center pixel into the expected grid heading", () => {
   const row = 90 - 1 - 30;
   assert.equal(resolved[row * 360 + 180], CELL_SKY);
   assert.equal(resolved[0], CELL_UNKNOWN);
+});
+
+test("derives a level north-facing camera pose from device vectors", () => {
+  const orientation = cameraPoseFromDeviceOrientation({ alpha: 0, beta: 90, gamma: 0, compassHeading: 0 });
+  approximately(orientation.heading, 0);
+  approximately(orientation.elevation, 0);
+  approximately(orientation.roll, 0);
+  approximately(orientation.pose.forward.y, 1);
+  approximately(orientation.pose.up.z, 1);
+});
+
+test("keeps pitch direction correct above the horizon", () => {
+  const orientation = cameraPoseFromDeviceOrientation({ alpha: 0, beta: 120, gamma: 0, compassHeading: 0 });
+  approximately(orientation.elevation, 30);
+});
+
+test("projects a solar direction consistently when the camera is rolled", () => {
+  const orientation = cameraPoseFromDeviceOrientation({
+    alpha: -90,
+    beta: 60,
+    gamma: 90,
+    compassHeading: 0,
+  });
+  approximately(orientation.heading, 0);
+  approximately(orientation.elevation, 0);
+  approximately(orientation.roll, 30);
+
+  const projected = projectDirectionToCamera(solarDirection(0, 20), orientation.pose, 60, 45);
+  assert.ok(projected);
+  assert.ok(projected.normalizedX < 0);
+  assert.ok(projected.normalizedY < 0);
+});
+
+test("uses the camera basis when projecting a captured frame", () => {
+  const orientation = cameraPoseFromDeviceOrientation({ alpha: 0, beta: 120, gamma: 0, compassHeading: 180 });
+  const grid = createAngularGrid(360, 90);
+  projectFrameToGrid({
+    classifications: new Uint8Array([CELL_SKY]),
+    frameWidth: 1,
+    frameHeight: 1,
+    heading: orientation.heading,
+    elevation: orientation.elevation,
+    roll: orientation.roll,
+    cameraPose: orientation.pose,
+    horizontalFov: 60,
+    grid,
+    stride: 1,
+  });
+  const resolved = resolveAngularGrid(grid);
+  const row = 90 - 1 - 30;
+  assert.equal(resolved[row * 360 + 180], CELL_SKY);
 });
 
 test("places the equinox Sun overhead at equatorial solar noon", () => {

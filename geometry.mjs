@@ -90,6 +90,7 @@ export function projectFrameToGrid({
   heading,
   elevation,
   roll = 0,
+  cameraPose = null,
   horizontalFov,
   grid,
   stride = 3,
@@ -108,6 +109,23 @@ export function projectFrameToGrid({
 
       const normalizedX = ((x + 0.5) / frameWidth) * 2 - 1;
       const normalizedY = ((y + 0.5) / frameHeight) * 2 - 1;
+      if (cameraPose?.forward && cameraPose?.right && cameraPose?.up) {
+        const cameraX = normalizedX * horizontalTangent;
+        const cameraY = -normalizedY * verticalTangent;
+        const worldX = cameraPose.forward.x + cameraX * cameraPose.right.x + cameraY * cameraPose.up.x;
+        const worldY = cameraPose.forward.y + cameraX * cameraPose.right.y + cameraY * cameraPose.up.y;
+        const worldZ = cameraPose.forward.z + cameraX * cameraPose.right.z + cameraY * cameraPose.up.z;
+        const length = Math.hypot(worldX, worldY, worldZ);
+        const azimuth = normalizeHeading((Math.atan2(worldX, worldY) * 180) / Math.PI);
+        const altitude = (Math.asin(worldZ / length) * 180) / Math.PI;
+
+        if (altitude < 0 || altitude >= grid.height) continue;
+        const gridX = Math.min(grid.width - 1, Math.floor((azimuth / 360) * grid.width));
+        const gridY = Math.min(grid.height - 1, Math.floor(grid.height - 1 - altitude));
+        const voteIndex = (gridY * grid.width + gridX) * 4 + value;
+        grid.votes[voteIndex] = Math.min(65535, grid.votes[voteIndex] + 1);
+        continue;
+      }
       const rotatedX = normalizedX * rollCosine - normalizedY * rollSine;
       const rotatedY = normalizedX * rollSine + normalizedY * rollCosine;
       const azimuthOffset = (Math.atan(rotatedX * horizontalTangent) * 180) / Math.PI;
