@@ -208,7 +208,7 @@ The synchronized guided-capture loop has now been implemented. It:
 - shows captured and missing 15-degree bins separately for the horizon and upper passes; and
 - lets the user remove any individual sample and return to that direction to retake it.
 
-An initial follow-up test confirmed that the synchronized capture appears to work on the iPhone 12. Repeatability at the same spot and testing on at least one Android phone remain outstanding. Those tests should confirm that the recorded heading does not change while inference runs, samples can be removed and retaken, and repeated sweeps produce similar obstruction maps.
+Follow-up field tests confirmed that the synchronized capture works on the iPhone 12 and that repeated sweeps from the same spot produce similar monthly results. Small differences remain and may be caused by changes in phone position or compass readings. On-device inference took approximately 0.5 seconds per sample on an iPhone 12 and approximately 0.2 seconds on an iPhone 17. Testing on at least one Android phone remains outstanding.
 
 Monthly-duration calculation should follow successful capture validation. It depends on a directionally trustworthy obstruction map, whereas adding it first could produce precise-looking results from misaligned capture data.
 
@@ -261,7 +261,11 @@ The prototype now turns a completed obstruction map into monthly gardening resul
 
 The calculation uses solar time because duration and the morning/afternoon split do not require a civil time zone. Clock-based first-sun and last-sun times remain deferred until longitude, time-zone, and daylight-saving handling are implemented and validated.
 
-The next validation step is to capture the same garden spot twice without changing position, then compare the monthly ranges. Large differences would indicate compass or camera-geometry uncertainty that should be addressed before adding more precise-looking result features.
+The next validation step is to repeat this comparison with deliberately measured phone-position offsets and on at least one Android device. This will help separate ordinary placement sensitivity from device-specific compass or camera-geometry uncertainty.
+
+Repeated field captures now produce similar results. When the final required view is accepted, the prototype automatically stops the camera and orientation listeners, replaces the capture workspace with the results, and provides a control for reopening the camera to review or retake samples. This avoids keeping sensitive sensors active while the user reads the estimate and reduces battery use.
+
+The earlier result label “Borderline” has been replaced with “Between categories.” It appears only when the confirmed-to-possible sunlight range crosses one or more provisional plant-light thresholds at 2, 4, or 6 hours per day. In that case, the measured range is more informative than assigning a single category.
 
 ## Non-functional requirements
 

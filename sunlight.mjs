@@ -54,7 +54,7 @@ export function lightCategory(minimumHours, maximumHours = minimumHours) {
     return "Shade";
   };
   const minimumCategory = categoryFor(minimumHours);
-  return minimumCategory === categoryFor(maximumHours) ? minimumCategory : "Borderline";
+  return minimumCategory === categoryFor(maximumHours) ? minimumCategory : "Between categories";
 }
 
 export function calculateMonthlySunlight({

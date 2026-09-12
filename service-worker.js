@@ -1,4 +1,4 @@
-const CACHE_NAME = "sun-exposure-capture-v6";
+const CACHE_NAME = "sun-exposure-capture-v7";
 const APP_SHELL = [
   "./",
   "./index.html",

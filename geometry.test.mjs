@@ -214,3 +214,8 @@ test("does not count a fully obstructed map as direct sunlight", () => {
   assert.equal(june.knownPercent, 100);
   assert.equal(lightCategory(june.confirmedHours, june.possibleHours), "Shade");
 });
+
+test("explains a sunlight range that crosses a plant-light threshold", () => {
+  assert.equal(lightCategory(3.8, 4.2), "Between categories");
+  assert.equal(lightCategory(4.2, 5.8), "Partial sun");
+});

@@ -40,6 +40,8 @@ const elements = {
   capabilityList: document.querySelector("#capability-list"),
   openCapture: document.querySelector("#open-capture"),
   captureLab: document.querySelector("#capture-lab"),
+  captureTitle: document.querySelector("#capture-title"),
+  captureWorkspace: document.querySelector("#capture-workspace"),
   closeCapture: document.querySelector("#close-capture"),
   video: document.querySelector("#camera-preview"),
   solarOverlay: document.querySelector("#solar-overlay"),
@@ -75,6 +77,8 @@ const elements = {
   monthlyResults: document.querySelector("#monthly-results"),
   resultsStatus: document.querySelector("#results-status"),
   resultsConfidence: document.querySelector("#results-confidence"),
+  sunResults: document.querySelector("#sun-results"),
+  resumeCapture: document.querySelector("#resume-capture"),
 };
 
 const state = {
@@ -287,6 +291,10 @@ function removeOrientationListeners() {
 async function openCaptureTest() {
   elements.openCapture.disabled = true;
   elements.captureLab.hidden = false;
+  elements.captureWorkspace.hidden = false;
+  elements.sunResults.hidden = true;
+  elements.captureTitle.textContent = "Map the visible sky";
+  elements.closeCapture.textContent = "Close camera";
   elements.captureLab.scrollIntoView({ behavior: "smooth", block: "start" });
   elements.cameraMessage.hidden = false;
   elements.cameraMessage.textContent = "Requesting camera and sensor access…";
@@ -561,6 +569,7 @@ async function captureSample({ manual = false } = {}) {
     elements.sampleReviewMeta.textContent = `${Math.round(orientation.heading)}° · ${(inferenceMs / 1000).toFixed(1)} s`;
     elements.modelStatus.textContent = `Accepted ${Math.round(orientation.heading)}° in ${(inferenceMs / 1000).toFixed(1)} seconds. Follow the next target and hold still again.`;
     elements.exportButton.disabled = false;
+    if (captureIsComplete()) showCompletedResults();
   } catch (error) {
     console.error(error);
     elements.modelStatus.textContent = "That frame could not be analyzed. Hold still and try again.";
@@ -592,6 +601,38 @@ function renderCoverage() {
   renderCoverageBand(elements.horizonCoverage, 0);
   renderCoverageBand(elements.upperCoverage, 1);
   renderMonthlyResults();
+}
+
+function captureIsComplete() {
+  const requiredKeys = activeRequiredKeys();
+  return Boolean(
+    state.solarGuidance &&
+      requiredKeys.size &&
+      [...requiredKeys].every((key) => state.coverageBins.has(key)),
+  );
+}
+
+function stopCaptureHardware() {
+  state.stream?.getTracks().forEach((track) => track.stop());
+  state.stream = null;
+  state.cameraReady = false;
+  state.isStable = false;
+  state.orientation = null;
+  state.orientationWindow = [];
+  elements.video.srcObject = null;
+  elements.cameraMessage.hidden = false;
+  removeOrientationListeners();
+}
+
+function showCompletedResults() {
+  if (!captureIsComplete()) return;
+  stopCaptureHardware();
+  elements.captureWorkspace.hidden = true;
+  elements.sunResults.hidden = false;
+  elements.captureTitle.textContent = "Your sunlight estimate";
+  elements.closeCapture.textContent = "Close results";
+  updateCaptureAvailability();
+  requestAnimationFrame(() => elements.sunResults.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
 function renderMonthOptions() {
@@ -989,7 +1030,7 @@ function exportDiagnostics() {
   const exportedSamples = state.samples.map(({ classifications, capturedAtPerformance, completedAtPerformance, ...sample }) => sample);
   const payload = {
     format: "garden-sun-capture-diagnostic",
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     notice: "Contains precise location when access was granted. Stored only in this download.",
     device: {
@@ -1023,21 +1064,15 @@ function exportDiagnostics() {
 }
 
 function closeCaptureTest() {
-  state.stream?.getTracks().forEach((track) => track.stop());
-  state.stream = null;
-  state.cameraReady = false;
-  state.isStable = false;
-  state.orientationWindow = [];
-  elements.video.srcObject = null;
+  stopCaptureHardware();
   elements.captureLab.hidden = true;
-  elements.cameraMessage.hidden = false;
-  removeOrientationListeners();
   updateCaptureAvailability();
 }
 
 elements.checkButton?.addEventListener("click", renderCapabilityCheck);
 elements.openCapture?.addEventListener("click", openCaptureTest);
 elements.closeCapture?.addEventListener("click", closeCaptureTest);
+elements.resumeCapture?.addEventListener("click", openCaptureTest);
 elements.captureFrame?.addEventListener("click", () => captureSample({ manual: true }));
 elements.toggleAuto?.addEventListener("click", toggleAutoSampling);
 elements.exportButton?.addEventListener("click", exportDiagnostics);

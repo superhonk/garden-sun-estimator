@@ -953,6 +953,18 @@ h3 {
   font-size: 0.78rem;
 }
 
+.results-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.sun-results .secondary-button {
+  border-color: rgba(255, 255, 255, 0.45);
+  color: var(--white);
+  background: transparent;
+}
+
 .results-empty {
   margin: 0;
   padding: 1rem;
