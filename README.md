@@ -195,7 +195,7 @@ This approach is provisional. Mobile field tests must determine whether browser 
 
 ### Initial mobile finding and synchronized-capture milestone
 
-An initial test on an iPhone 12 found that the camera works and the segmentation masks are visually accurate when shown. The masks appear only intermittently and can lag behind the live camera view while the user continues moving. In the current prototype, the frame is copied before segmentation but its orientation is read after segmentation finishes. This can associate a good mask with a later, incorrect phone direction and is therefore a capture-correctness issue, not merely a visual delay.
+An initial test on an iPhone 12 found that the camera works and the segmentation masks are visually accurate when shown. The masks appeared only intermittently and could lag behind the live camera view while the user continued moving. In the initial prototype, the frame was copied before segmentation but its orientation was read after segmentation finished. This could associate a good mask with a later, incorrect phone direction and was therefore a capture-correctness issue, not merely a visual delay.
 
 The synchronized guided-capture loop has now been implemented. It:
 
@@ -208,7 +208,7 @@ The synchronized guided-capture loop has now been implemented. It:
 - shows captured and missing 15-degree bins separately for the horizon and upper passes; and
 - lets the user remove any individual sample and return to that direction to retake it.
 
-The milestone is complete in code but must be field-tested again on the iPhone 12 and at least one Android phone. The test should confirm that a frame is captured only after a steady hold, the mask remains aligned with the frozen frame, the recorded heading does not change while inference runs, samples can be removed and retaken, and repeated sweeps at the same spot produce similar obstruction maps.
+An initial follow-up test confirmed that the synchronized capture appears to work on the iPhone 12. Repeatability at the same spot and testing on at least one Android phone remain outstanding. Those tests should confirm that the recorded heading does not change while inference runs, samples can be removed and retaken, and repeated sweeps produce similar obstruction maps.
 
 Solar-path and monthly-duration calculation should follow successful capture validation. It depends on a directionally trustworthy obstruction map, whereas adding it first could produce precise-looking results from misaligned capture data.
 
