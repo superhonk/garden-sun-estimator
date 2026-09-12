@@ -26,6 +26,12 @@ import {
   projectDirectionToCamera,
   solarDirection,
 } from "./orientation.mjs";
+import {
+  calculateMonthlySunlight,
+  classifySunPosition,
+  lightCategory,
+  solarDeclinationForDay,
+} from "./sunlight.mjs";
 
 function approximately(actual, expected, tolerance = 0.001) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not within ${tolerance} of ${expected}`);
@@ -168,4 +174,43 @@ test("handles polar night without inventing a winter trajectory", () => {
   assert.equal(guidance.lowestPath.length, 0);
   assert.ok(guidance.highestPath.length > 0);
   assert.ok(guidance.requiredKeys.length > 0);
+});
+
+test("calculates plausible seasonal solar declination", () => {
+  approximately(solarDeclinationForDay(172), SOLSTICE_DECLINATION, 0.2);
+  approximately(solarDeclinationForDay(355), -SOLSTICE_DECLINATION, 0.2);
+});
+
+test("marks mixed sky and obstruction around the solar disk as uncertain", () => {
+  const map = new Uint8Array(360 * 90).fill(CELL_SKY);
+  map[(90 - 1 - 30) * 360 + 180] = CELL_TREE;
+  assert.equal(classifySunPosition(map, 360, 90, 180, 30), CELL_UNKNOWN);
+});
+
+test("calculates about twelve hours for an open equatorial sky", () => {
+  const map = new Uint8Array(360 * 90).fill(CELL_SKY);
+  const [march] = calculateMonthlySunlight({
+    latitude: 0,
+    classifications: map,
+    width: 360,
+    height: 90,
+    months: [2],
+  });
+  assert.ok(march.confirmedHours > 11.7 && march.confirmedHours < 12.1);
+  assert.ok(march.possibleHours > 11.9 && march.possibleHours < 12.2);
+});
+
+test("does not count a fully obstructed map as direct sunlight", () => {
+  const map = new Uint8Array(360 * 90).fill(CELL_OBSTRUCTION);
+  const [june] = calculateMonthlySunlight({
+    latitude: 52.52,
+    classifications: map,
+    width: 360,
+    height: 90,
+    months: [5],
+  });
+  approximately(june.confirmedHours, 0);
+  approximately(june.possibleHours, 0);
+  assert.equal(june.knownPercent, 100);
+  assert.equal(lightCategory(june.confirmedHours, june.possibleHours), "Shade");
 });

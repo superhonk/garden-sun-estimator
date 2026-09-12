@@ -21,6 +21,7 @@ import {
   projectDirectionToCamera,
   solarDirection,
 } from "./orientation.mjs";
+import { calculateMonthlySunlight } from "./sunlight.mjs";
 
 const TFJS_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 const DEEPLAB_URL = "https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js";
@@ -31,6 +32,7 @@ const COVERAGE_BINS = 48;
 const STABILITY_WINDOW_MS = 650;
 const STABLE_HEADING_DEGREES = 2;
 const STABLE_TILT_DEGREES = 2.5;
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const elements = {
   checkButton: document.querySelector("#check-device"),
@@ -69,6 +71,10 @@ const elements = {
   fovReading: document.querySelector("#fov-reading"),
   map: document.querySelector("#obstruction-map"),
   exportButton: document.querySelector("#export-diagnostics"),
+  monthOptions: document.querySelector("#month-options"),
+  monthlyResults: document.querySelector("#monthly-results"),
+  resultsStatus: document.querySelector("#results-status"),
+  resultsConfidence: document.querySelector("#results-confidence"),
 };
 
 const state = {
@@ -93,6 +99,9 @@ const state = {
   samples: [],
   coverageBins: new Set(),
   grid: createAngularGrid(),
+  selectedMonths: new Set([3, 4, 5, 6, 7, 8, 9]),
+  monthsTouched: false,
+  monthlySunlight: null,
 };
 
 function getCapabilities() {
@@ -186,6 +195,12 @@ function requestLocation() {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         state.location = { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy };
+        if (!state.monthsTouched) {
+          state.selectedMonths = new Set(
+            coords.latitude >= 0 ? [3, 4, 5, 6, 7, 8, 9] : [9, 10, 11, 0, 1, 2, 3],
+          );
+          renderMonthOptions();
+        }
         state.solarGuidance = createSolarGuidance(coords.latitude);
         state.requiredKeys = new Set(state.solarGuidance.requiredKeys);
         elements.location.textContent = `±${Math.round(coords.accuracy)} m`;
@@ -576,6 +591,105 @@ function renderCoverage() {
     : `${state.samples.length} ${state.samples.length === 1 ? "sample" : "samples"} · ${coverage}% directional coverage`;
   renderCoverageBand(elements.horizonCoverage, 0);
   renderCoverageBand(elements.upperCoverage, 1);
+  renderMonthlyResults();
+}
+
+function renderMonthOptions() {
+  elements.monthOptions.replaceChildren(
+    ...MONTH_NAMES.map((name, month) => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      const text = document.createElement("span");
+      label.className = "month-option";
+      input.type = "checkbox";
+      input.value = String(month);
+      input.checked = state.selectedMonths.has(month);
+      input.setAttribute("aria-label", `${name} included in foliage season`);
+      input.addEventListener("change", () => {
+        state.monthsTouched = true;
+        if (input.checked) state.selectedMonths.add(month);
+        else state.selectedMonths.delete(month);
+        renderMonthlyResults();
+      });
+      text.textContent = name;
+      label.append(input, text);
+      return label;
+    }),
+  );
+}
+
+function formatHours(minimum, maximum) {
+  if (maximum - minimum < 0.05) return `${minimum.toFixed(1)} h`;
+  return `${minimum.toFixed(1)}–${maximum.toFixed(1)} h`;
+}
+
+function renderMonthlyResults() {
+  const requiredKeys = activeRequiredKeys();
+  const capturedRequired = [...requiredKeys].filter((key) => state.coverageBins.has(key)).length;
+  const captureComplete = Boolean(state.solarGuidance && requiredKeys.size && capturedRequired === requiredKeys.size);
+  state.monthlySunlight = null;
+
+  if (!state.location || !state.solarGuidance) {
+    elements.resultsStatus.textContent = "Location is needed to calculate the Sun's position for each month.";
+    elements.resultsConfidence.textContent = "Waiting for location";
+    elements.monthlyResults.replaceChildren();
+    return;
+  }
+  if (!captureComplete) {
+    elements.resultsStatus.textContent = `Complete the highlighted Sun corridor to calculate monthly results (${capturedRequired} of ${requiredKeys.size} views).`;
+    elements.resultsConfidence.textContent = "Waiting for capture";
+    elements.monthlyResults.replaceChildren();
+    return;
+  }
+
+  const months = [...state.selectedMonths].sort((a, b) => a - b);
+  if (!months.length) {
+    elements.resultsStatus.textContent = "Select at least one foliage-season month.";
+    elements.resultsConfidence.textContent = "No months selected";
+    const empty = document.createElement("p");
+    empty.className = "results-empty";
+    empty.textContent = "Choose the months when trees have leaves and plants are actively growing.";
+    elements.monthlyResults.replaceChildren(empty);
+    return;
+  }
+
+  const results = calculateMonthlySunlight({
+    latitude: state.location.latitude,
+    classifications: resolveAngularGrid(state.grid),
+    width: state.grid.width,
+    height: state.grid.height,
+    months,
+  });
+  state.monthlySunlight = results;
+  const averageKnown = Math.round(results.reduce((total, result) => total + result.knownPercent, 0) / results.length);
+  elements.resultsStatus.textContent = "Estimated direct sunlight after accounting for captured trees and structures.";
+  elements.resultsConfidence.textContent = `${averageKnown}% of path known`;
+  elements.monthlyResults.replaceChildren(
+    ...results.map((result) => {
+      const article = document.createElement("article");
+      const name = document.createElement("div");
+      const measurement = document.createElement("div");
+      const hours = document.createElement("p");
+      const detail = document.createElement("p");
+      const category = document.createElement("div");
+      article.className = "month-result";
+      name.className = "month-result-name";
+      name.textContent = MONTH_NAMES[result.month];
+      hours.className = "month-result-hours";
+      hours.textContent = formatHours(result.confirmedHours, result.possibleHours);
+      detail.className = "month-result-detail";
+      detail.textContent = `${result.morningHours.toFixed(1)} h morning · ${result.afternoonHours.toFixed(1)} h afternoon${result.uncertainHours >= 0.05 ? ` · up to ${result.uncertainHours.toFixed(1)} h uncertain` : ""}`;
+      category.className = "month-result-category";
+      category.textContent = result.category;
+      measurement.append(hours, detail);
+      article.append(name, measurement, category);
+      article.setAttribute(
+        "aria-label",
+        `${MONTH_NAMES[result.month]}: ${formatHours(result.confirmedHours, result.possibleHours)} average direct sunlight per day, ${result.category}`,
+      );
+      return article;
+    }),
+  );
 }
 
 function renderCoverageBand(container, elevationBand) {
@@ -875,7 +989,7 @@ function exportDiagnostics() {
   const exportedSamples = state.samples.map(({ classifications, capturedAtPerformance, completedAtPerformance, ...sample }) => sample);
   const payload = {
     format: "garden-sun-capture-diagnostic",
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     notice: "Contains precise location when access was granted. Stored only in this download.",
     device: {
@@ -895,6 +1009,8 @@ function exportDiagnostics() {
     performance: {
       inferenceMilliseconds: state.samples.map(({ inferenceMs }) => Math.round(inferenceMs)),
     },
+    foliageMonths: [...state.selectedMonths].sort((a, b) => a - b),
+    monthlySunlight: state.monthlySunlight,
     samples: exportedSamples,
   };
   const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
@@ -929,6 +1045,7 @@ elements.fovControl?.addEventListener("input", () => {
   elements.fovReading.textContent = `${elements.fovControl.value}°`;
   queueSolarOverlayRender();
 });
+renderMonthOptions();
 window.addEventListener("resize", queueSolarOverlayRender);
 
 renderAngularMap();

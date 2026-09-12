@@ -182,6 +182,30 @@
           </section>
         </div>
 
+        <section id="sun-results" class="sun-results" aria-labelledby="results-title">
+          <div class="results-heading">
+            <div>
+              <p class="eyebrow">Clear-sky estimate</p>
+              <h3 id="results-title">Direct sunlight by month</h3>
+            </div>
+            <span id="results-confidence" class="results-confidence">Waiting for capture</span>
+          </div>
+          <p id="results-status" class="results-status" role="status" aria-live="polite">
+            Complete the highlighted Sun corridor to calculate monthly results.
+          </p>
+
+          <fieldset class="month-selector">
+            <legend>Foliage-season months</legend>
+            <div id="month-options" class="month-options"></div>
+          </fieldset>
+
+          <div id="monthly-results" class="monthly-results" aria-live="polite"></div>
+          <p class="results-note">
+            Values are average hours per day for each month under clear skies. A range means part
+            of the Sun path crosses uncaptured or mixed map cells. Weather and light intensity are not included.
+          </p>
+        </section>
+
         <canvas id="sample-canvas" class="processing-canvas" aria-hidden="true"></canvas>
       </section>
 
@@ -197,10 +221,10 @@
 
       <section class="status-panel" aria-labelledby="status-title">
         <p class="eyebrow">Current status</p>
-        <h2 id="status-title">Solar-guided capture is ready to test</h2>
+        <h2 id="status-title">Monthly sunlight results are ready to test</h2>
         <p>
           This version calculates the yearly Sun corridor from location, overlays its highest and
-          lowest paths, and guides capture through the required views. It does not yet calculate monthly sunlight.
+          lowest paths, guides capture through the required views, and calculates monthly direct-sun estimates locally.
         </p>
       </section>
     </main>

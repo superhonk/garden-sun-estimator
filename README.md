@@ -6,7 +6,7 @@ This document is the living project description and source of truth for the prod
 
 The project is currently in the definition and prototyping stage.
 
-The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, synchronized frame-and-orientation sampling, measured inference timing, guided hold-still capture, a frozen mask review, automatic solstice-path calculation, a live and map-based solar-corridor overlay, two-pass next-target guidance, sample removal and retaking, an approximate azimuth/elevation obstruction map, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. Initial iPhone 12 tests confirmed that camera access, segmentation, and synchronized capture work and that the masks appear accurate. The solar-corridor guidance now requires field testing. The prototype does not yet calculate monthly sunlight.
+The repository now contains a phone-first capture feasibility prototype. It includes a browser capability check, live rear-camera capture, location and orientation diagnostics, on-device ADE20K semantic segmentation, conservative closing of small canopy gaps, synchronized frame-and-orientation sampling, measured inference timing, guided hold-still capture, a frozen mask review, automatic solstice-path calculation, a live and map-based solar-corridor overlay, two-pass next-target guidance, sample removal and retaking, an approximate azimuth/elevation obstruction map, monthly direct-sun ranges with foliage-month selection, local diagnostic export, an installable web-app manifest, basic offline caching, and an automated GitHub Pages deployment workflow. Initial iPhone 12 tests confirmed that camera access, segmentation, synchronized capture, corrected solar overlays, and full corridor coverage work. Repeatability and monthly-result accuracy now require field testing.
 
 ## Summary
 
@@ -86,14 +86,14 @@ The capture must cover the full relevant sun-path corridor, not only the souther
 
 ## Calculation and presentation
 
-Solar calculations are inexpensive enough to evaluate every day within the selected foliage-season months, or several representative days per month, without a backend. The precise sampling method remains to be validated.
+The prototype evaluates every calendar day within the selected foliage-season months without a backend.
 
-Calculations should use intervals of one or two minutes where practical. A five-minute interval may be acceptable for an early prototype but introduces avoidable rounding around transitions between sunlight and shade.
+Calculations use two-minute intervals. This avoids most transition-rounding error without creating noticeable work for a modern phone.
 
 Results should include:
 
 - potential direct-sun hours for each selected foliage-season month;
-- a representative daily value or range within each month;
+- an average daily value or uncertainty range within each month;
 - typical morning and afternoon exposure;
 - approximate first-sun and last-sun times;
 - a visual monthly exposure chart;
@@ -245,6 +245,24 @@ The prototype now:
 
 The next iPhone field test should keep the phone in portrait orientation and verify that both trajectories remain attached to the outdoor scene while panning and tilting. Small jitter from compass noise is expected, but the paths should no longer turn vertical or invert. After deploying this change, reload the page once so the updated offline cache is activated.
 
+### Monthly direct-sun calculation milestone
+
+The prototype now turns a completed obstruction map into monthly gardening results without uploading the map or location. It:
+
+- samples the Sun position every two minutes for every calendar day in each selected month;
+- reports the monthly average direct-sun duration per day rather than combining unlike seasons into an annual average;
+- preselects April through October in the northern hemisphere and October through April in the southern hemisphere, while allowing the user to change the foliage-season months;
+- compares a small neighborhood around each Sun position with the resolved angular map to account for the solar disk and one-degree map resolution;
+- counts a position as confirmed sun only when that neighborhood is consistently classified as sky;
+- presents unknown cells and mixed sky-obstruction boundaries as an explicit range between confirmed and possible sunlight;
+- separates confirmed morning and afternoon sun at solar noon;
+- shows the provisional full-sun, partial-sun, partial-shade, or shade category only when the complete result range stays within one category; and
+- includes selected months and calculated results in the local diagnostic export.
+
+The calculation uses solar time because duration and the morning/afternoon split do not require a civil time zone. Clock-based first-sun and last-sun times remain deferred until longitude, time-zone, and daylight-saving handling are implemented and validated.
+
+The next validation step is to capture the same garden spot twice without changing position, then compare the monthly ranges. Large differences would indicate compass or camera-geometry uncertainty that should be addressed before adding more precise-looking result features.
+
 ## Non-functional requirements
 
 - Controls and instructions must remain legible in bright sunlight.
@@ -362,8 +380,6 @@ The product is successful when:
 - Whether a guided multi-image sweep, recorded video, conventional panorama, or optional fisheye approach produces the best obstruction map.
 - How much vertical and horizontal coverage is required at each latitude.
 - Whether compass data is sufficiently reliable or needs manual alignment or visual correction.
-- Whether to calculate every day or a set of representative dates within each month.
-- Whether a monthly result should be a value for the middle of the month, a monthly average of daily values, or a displayed range. This is distinct from an annual average, which is not planned.
 - How partial occlusion of the solar disk should be counted.
 - How users should correct segmentation errors outdoors.
 - What angular opening size should be ignored within a detected canopy.
@@ -388,6 +404,7 @@ The product is successful when:
 - `geometry.mjs` contains canopy-gap closing and angular projection logic.
 - `solar.mjs` calculates solstice trajectories and the automatic capture corridor.
 - `orientation.mjs` converts device sensor rotations into a camera basis and projects world directions into the camera view.
+- `sunlight.mjs` calculates monthly direct-sun ranges from the resolved angular obstruction map.
 - `geometry.test.mjs` tests geometry, canopy rules, and solar guidance with Node's built-in test runner.
 - `manifest.webmanifest` makes the site installable where supported.
 - `service-worker.js` caches the application shell for repeat and limited offline use.

@@ -1,4 +1,4 @@
-const CACHE_NAME = "sun-exposure-capture-v5";
+const CACHE_NAME = "sun-exposure-capture-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "./geometry.mjs",
   "./orientation.mjs",
   "./solar.mjs",
+  "./sunlight.mjs",
   "./manifest.webmanifest",
 ];
 
