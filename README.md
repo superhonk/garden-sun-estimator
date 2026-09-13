@@ -50,4 +50,4 @@ Camera and sensor behavior should be tested from an HTTPS origin, such as the Gi
 
 ## License
 
-An open-source license has not yet been selected. Apache License 2.0 is currently recommended; see the development status for the remaining third-party model-license review.
+The project's original source code and documentation are available under the [Apache License 2.0](./LICENSE). TensorFlow.js, the DeepLab model package, and ADE20K-related materials retain their own licenses or terms; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

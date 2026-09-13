@@ -193,6 +193,12 @@ A later version may allow the user to select a plant or its active growing month
 
 This approach is provisional. Mobile field tests must determine whether browser orientation readings and assumed camera geometry are stable enough. If not, frame-to-frame feature matching or an explicit camera calibration step will be required.
 
+### Licensing
+
+The project's original source code and documentation are licensed under the Apache License 2.0. Contributions intentionally submitted for inclusion are covered by the contribution terms in that license.
+
+Third-party software and model-related materials remain subject to their own terms. TensorFlow.js and the TensorFlow.js DeepLab repository use Apache License 2.0. The selected pretrained model uses the ADE20K option; ADE20K is made available separately under its own Terms of Use. `THIRD_PARTY_NOTICES.md` records these upstream sources and the need to review their terms before redistributing model files, dataset content, annotations, or other dataset-derived assets. The application currently loads the model at runtime and does not include the ADE20K dataset in this repository.
+
 ### Initial mobile finding and synchronized-capture milestone
 
 An initial test on an iPhone 12 found that the camera works and the segmentation masks are visually accurate when shown. The masks appeared only intermittently and could lag behind the live camera view while the user continued moving. In the initial prototype, the frame was copied before segmentation but its orientation was read after segmentation finished. This could associate a good mask with a later, incorrect phone direction and was therefore a capture-correctness issue, not merely a visual delay.
@@ -381,7 +387,6 @@ The product is successful when:
 
 ## Open decisions and highest-risk questions
 
-- Confirm the repository license. Apache License 2.0 is the current recommendation because it is permissive, includes an explicit patent grant from contributors, and matches the license used by TensorFlow.js. The separate terms associated with the pretrained model and ADE20K training dataset must also be reviewed and documented before a public release.
 - Whether a guided multi-image sweep, recorded video, conventional panorama, or optional fisheye approach produces the best obstruction map.
 - How much vertical and horizontal coverage is required at each latitude.
 - Whether compass data is sufficiently reliable or needs manual alignment or visual correction.
@@ -405,6 +410,8 @@ The product is successful when:
 
 - `README.md` is the concise public overview, usage guide, privacy summary, and contribution invitation.
 - `DEVELOPMENT_STATUS.md` is this living product description, requirements record, implementation status, and validation plan.
+- `LICENSE` contains the Apache License 2.0 terms for the project's original work.
+- `THIRD_PARTY_NOTICES.md` identifies the TensorFlow.js, DeepLab, and ADE20K licensing considerations.
 - `index.html` contains the initial application shell.
 - `styles.css` contains the responsive visual styling.
 - `app.js` contains permissions, live capture, on-device segmentation, obstruction-map assembly, diagnostic export, and service-worker registration.
